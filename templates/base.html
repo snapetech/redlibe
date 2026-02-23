@@ -1,0 +1,98 @@
+{% import "utils.html" as utils %}
+
+<!DOCTYPE html>
+<html lang="en" class="{% if prefs.fixed_navbar == "on" %}fixed_navbar{% endif %}">
+	<head>
+		{% block head %}
+		<title>{% block title %}Redlib{% endblock %}</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<meta name="description" content="View on Redlib, an alternative private front-end to Reddit.">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		{% if crate::utils::disable_indexing() %}
+		<meta name="robots" content="noindex, nofollow">
+		{% endif %}
+		<!-- General PWA -->
+		<meta name="theme-color" content="#1F1F1F">
+		<!-- iOS Application -->
+		<meta name="apple-mobile-web-app-title" content="Redlib">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="default">
+		<!-- Android -->
+		<meta name="mobile-web-app-capable" content="yes">
+		<!-- iOS Logo -->
+		<link href="/touch-icon-iphone.png" rel="apple-touch-icon">
+		<!-- OpenSearch description file -->
+		<link rel="search" type="application/opensearchdescription+xml" title="Search Redlib" href="/opensearch.xml">
+		<!-- PWA Manifest -->
+		<link rel="manifest" type="application/json" href="/manifest.json">
+		<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"> 
+		<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}">
+		<!-- Video quality -->
+		<div id="video_quality" data-value="{{ prefs.video_quality }}"></div>
+		{% endblock %}
+		</head>
+	<body class="
+		{% if prefs.layout != "" %}{{ prefs.layout }}{% endif %}
+		{% if prefs.wide == "on" %} wide{% endif %}
+		{% if prefs.theme != "system" %} {{ prefs.theme }}{% endif %}
+		{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}">
+		<!-- NAVIGATION BAR -->
+		<nav class="
+			{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}">
+			<div id="logo">
+				<a id="redlib" href="/"><span id="red">red</span><span id="lib">lib.</span></a>
+				{% block subscriptions %}{% endblock %}
+			</div>
+			{% block search %}{% endblock %}
+			<div id="links">
+				<a id="reddit_link" {% if prefs.disable_visit_reddit_confirmation != "on" %}href="#popup"{% else %}href="https://www.reddit.com{{ url }}" rel="nofollow"{% endif %}>
+					<span>reddit</span>
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M22 2L12 22"/>
+						<path d="M2 6.70587C3.33333 8.07884 3.33333 11.5971 3.33333 11.5971M3.33333 19.647V11.5971M3.33333 11.5971C3.33333 11.5971 5.125 7.47817 8 7.47817C10.875 7.47817 12 8.85114 12 8.85114"/>
+					</svg>
+				</a>
+				{% if prefs.disable_visit_reddit_confirmation != "on" %}
+					{% call utils::visit_reddit_confirmation(url) %}
+				{% endif %}
+				{% if prefs.logged_in %}
+					<span id="logged_in_user" title="Logged in as {{ prefs.username }}">u/{{ prefs.username }}</span>
+					<form id="logout_form" method="POST" action="/logout">
+						<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+						<button type="submit" id="logout_btn" title="Log out">
+							<span>logout</span>
+						</button>
+					</form>
+				{% else %}
+					<a id="login_link" href="/login">
+						<span>login</span>
+					</a>
+				{% endif %}
+				<a id="settings_link" href="/settings">
+					<span>settings</span>
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<title>settings</title>
+						<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+					</svg>
+				</a>
+			</div>
+		</nav>
+		
+		<!-- MAIN CONTENT -->
+		{% block body %}
+		<main>
+			{% block content %}
+			{% endblock %}
+		</main>
+		{% endblock %}
+
+		<!-- FOOTER -->
+		{% block footer %}
+			<footer>
+				<div class="footer-buttons">
+					<p><span id="version">v{{ env!("CARGO_PKG_VERSION") }}&emsp;</span><a href="/info" title="View instance information">ⓘ View instance info</a>&emsp;<a href="https://github.com/redlib-org/redlib" title="View code on GitHub">&lt;&gt; Code</a></p>
+				</div>
+			</footer>
+		{% endblock %}
+	</body>
+</html>

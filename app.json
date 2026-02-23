@@ -1,0 +1,84 @@
+{
+  "name": "Redlib",
+  "description": "Private front-end for Reddit",
+  "buildpacks": [
+    {
+      "url": "https://github.com/emk/heroku-buildpack-rust"
+    },
+    {
+      "url": "emk/rust"
+    }
+  ],
+  "stack": "container",
+  "env": {
+    "REDLIB_DEFAULT_THEME": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_FRONT_PAGE": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_LAYOUT": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_WIDE": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_COMMENT_SORT": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_POST_SORT": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_BLUR_SPOILER": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_SHOW_NSFW": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_BLUR_NSFW": {
+      "required": false
+    },
+    "REDLIB_USE_HLS": {
+      "required": false
+    },
+    "REDLIB_HIDE_HLS_NOTIFICATION": {
+      "required": false
+    },
+    "REDLIB_SFW_ONLY": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_HIDE_AWARDS": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_HIDE_SCORE": {
+      "required": false
+    },
+    "REDLIB_BANNER": {
+      "required": false
+    },
+    "REDLIB_ROBOTS_DISABLE_INDEXING": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_SUBSCRIPTIONS": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_FILTERS": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_DISABLE_VISIT_REDDIT_CONFIRMATION": {
+      "required": false
+    },
+    "REDLIB_PUSHSHIFT_FRONTEND": {
+      "required": false
+    },
+    "REDLIB_ENABLE_RSS": {
+      "required": false
+    },
+    "REDLIB_FULL_URL": {
+      "required": false
+    },
+    "REDLIB_DEFAULT_REMOVE_DEFAULT_FEEDS": {
+      "required": false
+    }
+  }
+}
