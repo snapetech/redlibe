@@ -1,0 +1,71 @@
+{% import "utils.html" as utils %}
+{% extends "base.html" %}
+
+{% block title %}Sign in — Redlib{% endblock %}
+
+{% block content %}
+<div id="login_page">
+	<h1 id="login_title">Sign in</h1>
+
+	{% if let Some(err) = error %}
+	<div id="login_error" role="alert">{{ err }}</div>
+	{% endif %}
+
+	<div id="login_options">
+
+		<!-- ── Option 1: Reddit OAuth ─────────────────────────────── -->
+		<section class="login_card" id="login_reddit_card">
+			<h2>Reddit account</h2>
+			<p class="login_card_desc">
+				Authorize via Reddit's OAuth flow. Grants voting, saving, and
+				profile access. Requires a registered Reddit app client ID.
+			</p>
+			<form method="POST" action="/login/reddit">
+				<button type="submit" class="login_btn login_btn_reddit">
+					Connect to Reddit →
+				</button>
+			</form>
+		</section>
+
+		<!-- ── Option 2: SSH browser import ──────────────────────── -->
+		<section class="login_card" id="login_ssh_card">
+			<h2>Import from browser</h2>
+			<p class="login_card_desc">
+				Copy the active Reddit session from a Firefox or LibreWolf
+				install on a remote machine via SSH. No app registration needed.
+			</p>
+			<form method="POST" action="/login/ssh-import">
+				<div class="login_field">
+					<label for="ssh_host">SSH host</label>
+					<input type="text" id="ssh_host" name="ssh_host"
+						   value="{{ ssh_host }}"
+						   placeholder="hostname or user@host"
+						   autocomplete="off" spellcheck="false">
+				</div>
+				<div class="login_field">
+					<label for="ssh_user">SSH user</label>
+					<input type="text" id="ssh_user" name="ssh_user"
+						   value="{{ ssh_user }}"
+						   placeholder="username"
+						   autocomplete="off" spellcheck="false">
+				</div>
+				<div class="login_field login_field_radio">
+					<span class="login_radio_label">Browser</span>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="librewolf" checked>
+						LibreWolf
+					</label>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="firefox">
+						Firefox
+					</label>
+				</div>
+				<button type="submit" class="login_btn login_btn_ssh">
+					Import session →
+				</button>
+			</form>
+		</section>
+
+	</div><!-- #login_options -->
+</div><!-- #login_page -->
+{% endblock %}

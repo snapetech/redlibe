@@ -2228,3 +2228,138 @@ th {
     border-radius: 3px;
     font-size: 0.9em;
 }
+
+/* ── Login page ──────────────────────────────────────────────────── */
+
+#login_page {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+#login_title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    color: var(--text);
+}
+
+#login_error {
+    background-color: rgba(220, 50, 47, 0.12);
+    border: 1px solid rgba(220, 50, 47, 0.5);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+#login_options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+@media (max-width: 600px) {
+    #login_options { grid-template-columns: 1fr; }
+}
+
+.login_card {
+    background-color: var(--post);
+    border: 1px solid var(--outside);
+    border-radius: 6px;
+    padding: 1.5rem;
+}
+
+.login_card h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem;
+    color: var(--text);
+}
+
+.login_card_desc {
+    font-size: 0.85rem;
+    color: var(--text);
+    opacity: 0.75;
+    margin: 0 0 1.25rem;
+    line-height: 1.5;
+}
+
+.login_field {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0.9rem;
+}
+
+.login_field label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0.3rem;
+    color: var(--text);
+    opacity: 0.85;
+}
+
+.login_field input[type="text"] {
+    background-color: var(--background);
+    border: 1px solid var(--outside);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.45rem 0.6rem;
+}
+
+.login_field input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.login_field_radio {
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+}
+
+.login_radio_label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text);
+    opacity: 0.85;
+    min-width: 50px;
+}
+
+.login_radio {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.login_btn {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    text-align: center;
+}
+
+.login_btn_reddit {
+    background-color: #ff4500;
+    color: #fff;
+}
+.login_btn_reddit:hover { background-color: #e03d00; }
+
+.login_btn_ssh {
+    background-color: var(--accent);
+    color: #fff;
+}
+.login_btn_ssh:hover { opacity: 0.88; }

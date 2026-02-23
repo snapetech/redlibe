@@ -302,8 +302,10 @@ async fn main() {
 
 	// --- redlib-extended: Auth, voting, REST API ---
 
-	// OAuth login flow
-	app.at("/login").get(|r| auth::login_redirect(r).boxed());
+	// Auth: login page, Reddit OAuth flow, SSH browser import, logout
+	app.at("/login").get(|r| auth::login_page(r).boxed());
+	app.at("/login/reddit").post(|r| auth::login_reddit(r).boxed());
+	app.at("/login/ssh-import").post(|r| auth::login_ssh_import(r).boxed());
 	app.at("/auth/callback").get(|r| auth::oauth_callback(r).boxed());
 	app.at("/logout").post(|r| auth::logout(r).boxed());
 

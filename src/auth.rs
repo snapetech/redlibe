@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use askama::Template;
+
 use aes_gcm::{
 	aead::{Aead, KeyInit},
 	Aes256Gcm, Nonce,
@@ -25,9 +27,21 @@ use sha2::Sha256;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::config::CONFIG;
+use crate::config::{set_runtime_user_agent, CONFIG};
 use crate::server::{RequestExt, ResponseExt};
-use crate::utils::redirect;
+use crate::utils::{redirect, template, Preferences};
+
+// ----- Login page template -----
+
+#[derive(Template)]
+#[template(path = "login.html")]
+struct LoginPage<'a> {
+	prefs: Preferences,
+	url: String,
+	error: Option<&'a str>,
+	ssh_host: String,
+	ssh_user: String,
+}
 
 /// Maximum POST body size accepted by auth handlers (4 KiB — login/logout forms are tiny).
 const MAX_BODY_SIZE: usize = 4 * 1024;
@@ -265,9 +279,27 @@ pub fn validate_csrf_token(auth: &AuthContext, submitted: &str) -> Result<(), St
 
 // ----- OAuth routes -----
 
-/// `GET /login` — generate a CSRF state token, then redirect to Reddit's
+/// `GET /login` — show the login choice page (Reddit OAuth or SSH import).
+/// Redirects to `/` if already authenticated.
+pub async fn login_page(req: Request<Body>) -> Result<Response<Body>, String> {
+	let auth = AuthContext::from_request(&req);
+	if auth.is_authenticated() {
+		return Ok(redirect("/"));
+	}
+	let prefs = Preferences::new(&req);
+	let page = LoginPage {
+		url: "/login".to_string(),
+		ssh_host: CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string()),
+		ssh_user: CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()),
+		error: None,
+		prefs,
+	};
+	Ok(template(&page))
+}
+
+/// `POST /login/reddit` — generate a CSRF state token, then redirect to Reddit's
 /// OAuth consent page.
-pub async fn login_redirect(_req: Request<Body>) -> Result<Response<Body>, String> {
+pub async fn login_reddit(_req: Request<Body>) -> Result<Response<Body>, String> {
 	let client_id = CONFIG.oauth_client_id.clone().ok_or("REDLIB_OAUTH_CLIENT_ID is not configured")?;
 	let redirect_uri = CONFIG.oauth_redirect_uri.clone().ok_or("REDLIB_OAUTH_REDIRECT_URI is not configured")?;
 
@@ -294,6 +326,190 @@ pub async fn login_redirect(_req: Request<Body>) -> Result<Response<Body>, Strin
 			.into(),
 	);
 	Ok(response)
+}
+
+/// `POST /login/ssh-import` — extract a Reddit bearer token from a Firefox or
+/// LibreWolf installation on a remote machine via SSH and sqlite3.
+///
+/// Form fields: `ssh_host`, `ssh_user`, `browser` (librewolf | firefox).
+/// Reads cookies.sqlite on the remote, decodes the token_v2 JWT, detects the
+/// browser version/arch for a matching User-Agent, then creates a session.
+pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, String> {
+	let prefs = Preferences::new(&req);
+
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_BODY_SIZE {
+		return Err("Request body too large".to_string());
+	}
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
+		.map(|(k, v)| (k.into_owned(), v.into_owned()))
+		.collect();
+
+	let ssh_host = form.get("ssh_host").map(|s| s.trim().to_string()).unwrap_or_else(|| CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string()));
+	let ssh_user = form.get("ssh_user").map(|s| s.trim().to_string()).unwrap_or_else(|| CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()));
+	let browser = form.get("browser").map(|s| s.as_str()).unwrap_or("librewolf");
+
+	// Validate ssh_host and ssh_user to prevent injection (used as CLI args, not shell strings)
+	if !ssh_host.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+		return render_login_error(&prefs, &ssh_host, &ssh_user, "Invalid SSH host — only alphanumeric, dots, hyphens, underscores allowed");
+	}
+	if !ssh_user.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+		return render_login_error(&prefs, &ssh_host, &ssh_user, "Invalid SSH user — only alphanumeric, underscores, hyphens allowed");
+	}
+
+	let ssh_key = CONFIG.ssh_key.clone().unwrap_or_else(|| "~/.ssh/id_ed25519".to_string());
+	let ssh_key_expanded = shellexpand::tilde(&ssh_key).into_owned();
+
+	// Run the extraction asynchronously
+	match ssh_extract_token(&ssh_host, &ssh_user, &ssh_key_expanded, browser).await {
+		Err(e) => render_login_error(&prefs, &ssh_host, &ssh_user, &format!("SSH extraction failed: {e}")),
+		Ok((bearer_token, user_agent)) => {
+			// Fetch username from Reddit
+			let username = fetch_username(&bearer_token).await.unwrap_or_else(|_| "unknown".to_string());
+
+			// Update the global UA so all outbound requests match the imported browser
+			if !user_agent.is_empty() {
+				set_runtime_user_agent(user_agent);
+			}
+
+			let session = SessionData {
+				access_token: bearer_token,
+				refresh_token: String::new(), // browser sessions have no refresh token
+				username,
+				// Browser tokens are typically session-scoped; use 6-hour window
+				expires_at: OffsetDateTime::now_utc().unix_timestamp() + 6 * 3600,
+				csrf_token: Uuid::new_v4().to_string(),
+			};
+
+			let encrypted = encrypt_session(&session).ok_or("Failed to encrypt session data")?;
+			let mut response = redirect("/");
+			response.insert_cookie(
+				Cookie::build((SESSION_COOKIE.to_string(), encrypted))
+					.path("/")
+					.http_only(true)
+					.secure(secure_cookies())
+					.same_site(SameSite::Lax)
+					.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+					.into(),
+			);
+			Ok(response)
+		}
+	}
+}
+
+/// Re-render the login page with an inline error message.
+fn render_login_error(prefs: &Preferences, ssh_host: &str, ssh_user: &str, msg: &str) -> Result<Response<Body>, String> {
+	let page = LoginPage {
+		url: "/login".to_string(),
+		ssh_host: ssh_host.to_string(),
+		ssh_user: ssh_user.to_string(),
+		error: Some(msg),
+		prefs: prefs.clone(),
+	};
+	Ok(template(&page))
+}
+
+/// Extract a Reddit bearer token and build a matching Firefox User-Agent by
+/// SSHing to the remote machine and querying its browser cookies.sqlite via sqlite3.
+///
+/// Returns `(bearer_token, user_agent_string)`.
+async fn ssh_extract_token(host: &str, user: &str, key_path: &str, browser: &str) -> Result<(String, String), String> {
+	// Determine which profile dir to search based on browser choice
+	let find_path = match browser {
+		"firefox" => "~/.mozilla/firefox",
+		_ => "~/.librewolf", // default: librewolf
+	};
+
+	// Single SSH call: find the cookies.sqlite, query it, get version+arch
+	// All output is in key=value lines for easy parsing.
+	let remote_script = format!(
+		r#"set -e
+DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+TOKEN=$(sqlite3 "$DB" 'SELECT value FROM moz_cookies WHERE host=".reddit.com" AND name="token_v2" ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
+[ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
+echo "TOKEN=$TOKEN"
+VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+ARCH=$(uname -m)
+echo "VERSION=$VERSION"
+echo "ARCH=$ARCH""#,
+		find_path = find_path,
+		browser = browser,
+	);
+
+	let output = tokio::process::Command::new("ssh")
+		.args([
+			"-i",
+			key_path,
+			"-o",
+			"BatchMode=yes",
+			"-o",
+			"ConnectTimeout=15",
+			"-o",
+			"StrictHostKeyChecking=accept-new",
+			&format!("{user}@{host}"),
+			&remote_script,
+		])
+		.output()
+		.await
+		.map_err(|e| format!("Failed to run ssh: {e}"))?;
+
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let stderr = String::from_utf8_lossy(&output.stderr);
+
+	if !output.status.success() {
+		// Check if stdout has an ERROR= line (from the script)
+		for line in stdout.lines() {
+			if let Some(msg) = line.strip_prefix("ERROR=") {
+				return Err(msg.to_string());
+			}
+		}
+		log::error!("SSH extraction stderr: {stderr}");
+		return Err(format!("SSH command failed (exit {})", output.status.code().unwrap_or(-1)));
+	}
+
+	// Parse key=value lines
+	let mut token_raw = String::new();
+	let mut version = String::new();
+	let mut arch = String::new();
+
+	for line in stdout.lines() {
+		if let Some(v) = line.strip_prefix("TOKEN=") {
+			token_raw = v.to_string();
+		} else if let Some(v) = line.strip_prefix("VERSION=") {
+			version = v.to_string();
+		} else if let Some(v) = line.strip_prefix("ARCH=") {
+			arch = v.to_string();
+		} else if let Some(msg) = line.strip_prefix("ERROR=") {
+			return Err(msg.to_string());
+		}
+	}
+
+	if token_raw.is_empty() {
+		return Err("No token found in SSH output".to_string());
+	}
+
+	// Decode the JWT payload to extract the bearer token
+	let bearer = decode_browser_token(&token_raw).unwrap_or_else(|| {
+		log::warn!("token_v2 could not be decoded as JWT; using raw value");
+		token_raw
+	});
+
+	// Build a Firefox-compatible UA string from the detected version and arch
+	let ua = if !version.is_empty() && !arch.is_empty() {
+		let ua_arch = match arch.as_str() {
+			"amd64" | "x86_64" => "x86_64",
+			"aarch64" | "arm64" => "aarch64",
+			"i686" | "i386" => "i686",
+			other => other,
+		};
+		let major = version.split('.').next().unwrap_or(&version);
+		format!("Mozilla/5.0 (X11; Linux {ua_arch}; rv:{version}) Gecko/20100101 Firefox/{major}.0")
+	} else {
+		String::new()
+	};
+
+	Ok((bearer, ua))
 }
 
 /// `GET /auth/callback` — handle Reddit's OAuth redirect, exchange the code

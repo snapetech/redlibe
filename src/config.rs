@@ -1,4 +1,6 @@
+use arc_swap::ArcSwap;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{env::var, fs::read_to_string, sync::LazyLock};
 
 /// This is the local static that is initialized at runtime (technically at
@@ -13,10 +15,26 @@ pub const DEFAULT_PUSHSHIFT_FRONTEND: &str = "undelete.pullpush.io";
 /// Override with the `REDLIB_USER_AGENT` environment variable.
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0";
 
-/// Returns the configured outbound User-Agent string.
-/// Reads `REDLIB_USER_AGENT` from the loaded config; falls back to `DEFAULT_USER_AGENT`.
+/// Runtime-overridable User-Agent. Set by the SSH import flow to match the
+/// remote browser's exact UA. Takes priority over `REDLIB_USER_AGENT` and the
+/// compiled-in default. Initialized to an empty string (= not set).
+pub static RUNTIME_USER_AGENT: LazyLock<ArcSwap<String>> = LazyLock::new(|| ArcSwap::from_pointee(String::new()));
+
+/// Returns the effective outbound User-Agent string. Priority:
+/// 1. `RUNTIME_USER_AGENT` (set at runtime by SSH import)
+/// 2. `REDLIB_USER_AGENT` env/config
+/// 3. `DEFAULT_USER_AGENT`
 pub fn get_user_agent() -> String {
+	let runtime = RUNTIME_USER_AGENT.load();
+	if !runtime.is_empty() {
+		return (**runtime).clone();
+	}
 	CONFIG.user_agent.clone().unwrap_or_else(|| DEFAULT_USER_AGENT.to_string())
+}
+
+/// Override the outbound User-Agent at runtime (e.g. after SSH import).
+pub fn set_runtime_user_agent(ua: String) {
+	RUNTIME_USER_AGENT.store(Arc::new(ua));
 }
 
 /// Stores the configuration parsed from the environment variables and the
@@ -158,6 +176,22 @@ pub struct Config {
 	/// local setups).
 	#[serde(rename = "REDLIB_SECURE_COOKIES")]
 	pub(crate) secure_cookies: Option<String>,
+
+	// --- SSH browser-token import (redlib-extended) ---
+
+	/// SSH hostname (or alias) of the machine running the browser whose session
+	/// to import. Pre-fills the login page form. Default: `kspld0`.
+	#[serde(rename = "REDLIB_SSH_HOST")]
+	pub(crate) ssh_host: Option<String>,
+
+	/// SSH username on the remote machine. Default: `keith`.
+	#[serde(rename = "REDLIB_SSH_USER")]
+	pub(crate) ssh_user: Option<String>,
+
+	/// Path to the SSH identity file used for the import connection.
+	/// Default: `~/.ssh/id_ed25519`.
+	#[serde(rename = "REDLIB_SSH_KEY")]
+	pub(crate) ssh_key: Option<String>,
 }
 
 impl Config {
@@ -214,6 +248,9 @@ impl Config {
 			raw_token: parse("REDLIB_RAW_TOKEN"),
 			browser_token: parse("REDLIB_BROWSER_TOKEN"),
 			secure_cookies: parse("REDLIB_SECURE_COOKIES"),
+			ssh_host: parse("REDLIB_SSH_HOST"),
+			ssh_user: parse("REDLIB_SSH_USER"),
+			ssh_key: parse("REDLIB_SSH_KEY"),
 		}
 	}
 }
@@ -252,6 +289,9 @@ fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {
 		"REDLIB_RAW_TOKEN" => config.raw_token.clone(),
 		"REDLIB_BROWSER_TOKEN" => config.browser_token.clone(),
 		"REDLIB_SECURE_COOKIES" => config.secure_cookies.clone(),
+		"REDLIB_SSH_HOST" => config.ssh_host.clone(),
+		"REDLIB_SSH_USER" => config.ssh_user.clone(),
+		"REDLIB_SSH_KEY" => config.ssh_key.clone(),
 		_ => None,
 	}
 }

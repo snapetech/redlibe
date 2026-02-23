@@ -625,7 +625,7 @@ pub struct Params {
 	pub before: Option<String>,
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[revisioned(revision = 1)]
 pub struct Preferences {
 	#[revision(start = 1)]
