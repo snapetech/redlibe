@@ -154,10 +154,10 @@ Phases below group the "medium + little" parity work into a sane backlog (no swi
 
 ### Phase 1 — "Make browsing feel like a client"
 
-- [ ] **Read-state** — Mark posts as read on scroll; hide read posts; optional clear read / unread only / read indicators. (See Backlog (4): Hide read / filter seen.)
-- [ ] **Filters v1** — Flair filters / blacklist; keyword (titles, ideally comments); user; domain; subreddit; rule/template-based. (See Backlog (4): Keyword filters, content-type; extend to flair/user/domain/sub.)
-- [ ] **Custom feeds + favorites** — Local multireddits, favorite subreddits, fast sub list. (See Backlog (4): Custom feeds done; Favorites.)
-- [ ] **Comment nav + collapsed comment memory** — Next/prev top-level comment, scroll-to-comment; persisted collapsed state per thread; more inline/long-press-style actions. (New backlog.)
+- [x] **Read-state** — Mark posts as read on scroll; hide read posts; optional clear read / unread only / read indicators. (See Backlog (4): Hide read / filter seen.)
+- [x] **Filters v1** — Flair filters / blacklist; keyword (titles, ideally comments); user; domain; subreddit; rule/template-based. (See Backlog (4): Keyword filters, content-type; extend to flair/user/domain/sub.)
+- [x] **Custom feeds + favorites** — Local multireddits, favorite subreddits, fast sub list. (See Backlog (4): Custom feeds done; Favorites.)
+- [x] **Comment nav + collapsed comment memory** — Next/prev top-level comment, scroll-to-comment; persisted collapsed state per thread; more inline/long-press-style actions. (New backlog.)
 
 ### Phase 2 — "Polish that people immediately notice"
 

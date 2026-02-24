@@ -317,6 +317,8 @@ async fn main() {
 	app.at("/save").post(|r| vote::save(r).boxed());
 	app.at("/comment").post(|r| comment::submit(r).boxed());
 	app.at("/edit").post(|r| edit::submit(r).boxed());
+	app.at("/search-save").post(|r| search::save(r).boxed());
+	app.at("/search-unsave").post(|r| search::unsave(r).boxed());
 
 	// Inbox and private messages
 	app.at("/inbox").get(|r| inbox::list(r).boxed());
@@ -395,9 +397,7 @@ async fn main() {
 	app.at("/wiki").get(|r| subreddit::wiki(r).boxed());
 	app.at("/wiki/*page").get(|r| subreddit::wiki(r).boxed());
 
-	// Search all of Reddit (more specific routes first)
-	app.at("/search/save").post(|r| search::save(r).boxed());
-	app.at("/search/unsave").post(|r| search::unsave(r).boxed());
+	// Search all of Reddit
 	app.at("/search").get(|r| search::find(r).boxed());
 
 	// Quick jump to subreddit

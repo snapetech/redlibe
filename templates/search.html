@@ -45,14 +45,14 @@
 		{% endif %}
 		{% if saved_searches.len() > 0 %}
 		<p class="saved_searches">Saved: {% for s in saved_searches %}<a href="{{ s.url }}">{{ s.label|e }}</a>
-			<form action="/search/unsave" method="POST" style="display:inline;" class="inline_unsave">
+			<form action="/search-unsave" method="POST" style="display:inline;" class="inline_unsave">
 				<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
 				<input type="hidden" name="q" value="{{ s.query|e }}">
 				<button type="submit" title="Remove from saved">×</button>
 			</form>{% if !loop.last %} · {% endif %}{% endfor %}</p>
 		{% endif %}
 		{% if params.q != "" %}
-		<form action="/search/save" method="POST" class="save_search_form">
+		<form action="/search-save" method="POST" class="save_search_form">
 			<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
 			<input type="hidden" name="q" value="{{ params.q|e }}">
 			<label for="save_search_name">Save this search</label>

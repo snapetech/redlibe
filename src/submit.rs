@@ -23,7 +23,6 @@ struct SubmitTemplate {
 	sub: String,
 	prefs: Preferences,
 	error: String,
-	redirect_url: String,
 	url: String,
 }
 
@@ -38,12 +37,10 @@ pub async fn get(req: Request<Body>) -> Result<Response<Body>, String> {
 		return error(req, "Cannot submit to this feed.").await;
 	}
 	let url = req.uri().to_string();
-	let redirect_url = url[1..].replace('?', "%3F").replace('&', "%26");
 	Ok(template(&SubmitTemplate {
 		sub,
 		prefs: Preferences::new(&req),
 		error: String::new(),
-		redirect_url,
 		url,
 	}))
 }
