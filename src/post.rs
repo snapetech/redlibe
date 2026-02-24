@@ -3,14 +3,15 @@
 // CRATES
 use crate::client::json;
 use crate::config::get_setting;
-use crate::server::RequestExt;
+use crate::server::{RequestExt, ResponseExt};
 use crate::subreddit::{can_access_quarantine, quarantine};
 use crate::utils::{
-	error, format_num, get_filters, nsfw_landing, param, parse_post, rewrite_emotes, setting, template, time, val, Author, Awards, Comment, Flair, FlairPart, Post, Preferences,
+	error, format_num, get_collapsed_comment_ids, get_filters, nsfw_landing, param, parse_post, rewrite_emotes, setting, template, time, val, Author, Awards, Comment, Flair, FlairPart, Post, Preferences,
 };
-use hyper::{Body, Request, Response};
-
 use askama::Template;
+use cookie::Cookie;
+use hyper::{Body, Request, Response};
+use time::{Duration, OffsetDateTime};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -27,6 +28,7 @@ struct PostTemplate {
 	url: String,
 	url_without_query: String,
 	comment_query: String,
+	reader_mode: bool,
 }
 
 static COMMENT_SEARCH_CAPTURE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\?q=(.*)&type=comment").unwrap());
@@ -83,10 +85,14 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 			let form = url::form_urlencoded::parse(query_string.as_bytes()).collect::<HashMap<_, _>>();
 			let query = form.get("q").unwrap().clone().to_string();
 
+			let collapsed_ids = get_collapsed_comment_ids(&req);
 			let comments = match query.as_str() {
-				"" => parse_comments(&response[1], &post.permalink, &post.author.name, highlighted_comment, &get_filters(&req), &req),
-				_ => query_comments(&response[1], &post.permalink, &post.author.name, highlighted_comment, &get_filters(&req), &query, &req),
+				"" => parse_comments(&response[1], &post.permalink, &post.author.name, highlighted_comment, &get_filters(&req), &collapsed_ids, &req),
+				_ => query_comments(&response[1], &post.permalink, &post.author.name, highlighted_comment, &get_filters(&req), &query, &collapsed_ids, &req),
 			};
+
+			let path_for_param = format!("?{}", req.uri().query().unwrap_or_default());
+			let reader_mode = param(&path_for_param, "reader").map(|s| s == "1" || s == "on").unwrap_or(false);
 
 			// Use the Post and Comment structs to generate a website to show users
 			Ok(template(&PostTemplate {
@@ -98,6 +104,7 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 				single_thread,
 				url: req_url,
 				comment_query: query,
+				reader_mode,
 			}))
 		}
 		// If the Reddit API returns an error, exit and send error page to user
@@ -112,9 +119,44 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 	}
 }
 
+/// POST /comment-collapse: body id=t1_xxx&action=collapse|expand — persist collapsed comment state in cookie.
+pub async fn comment_collapse(req: Request<Body>) -> Result<Response<Body>, String> {
+	let existing = get_collapsed_comment_ids(&req);
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	let form: std::collections::HashMap<String, String> =
+		url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+	let id = form.get("id").map(|s| s.trim()).unwrap_or("");
+	let action = form.get("action").map(|s| s.as_str()).unwrap_or("");
+	if id.is_empty() || !id.starts_with("t1_") || !matches!(action, "collapse" | "expand") {
+		let res = Response::builder().status(400).body(Body::empty()).unwrap_or_default();
+		return Ok(res);
+	}
+	let mut ids: Vec<String> = existing.into_iter().collect();
+	match action {
+		"collapse" => {
+			if !ids.contains(&id.to_string()) {
+				ids.push(id.to_string());
+			}
+		}
+		"expand" => ids.retain(|x| x != id),
+		_ => {}
+	}
+	ids.sort();
+	let value = ids.join(",");
+	let mut response = Response::builder().status(204).body(Body::empty()).unwrap_or_default();
+	response.insert_cookie(
+		Cookie::build(("collapsed_comment_ids", value))
+			.path("/")
+			.http_only(true)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+			.into(),
+	);
+	Ok(response)
+}
+
 // COMMENTS
 
-fn parse_comments(json: &serde_json::Value, post_link: &str, post_author: &str, highlighted_comment: &str, filters: &HashSet<String>, req: &Request<Body>) -> Vec<Comment> {
+fn parse_comments(json: &serde_json::Value, post_link: &str, post_author: &str, highlighted_comment: &str, filters: &HashSet<String>, collapsed_ids: &HashSet<String>, req: &Request<Body>) -> Vec<Comment> {
 	// Parse the comment JSON into a Vector of Comments
 	let comments = json["data"]["children"].as_array().map_or(Vec::new(), std::borrow::ToOwned::to_owned);
 
@@ -124,11 +166,11 @@ fn parse_comments(json: &serde_json::Value, post_link: &str, post_author: &str, 
 		.map(|comment| {
 			let data = &comment["data"];
 			let replies: Vec<Comment> = if data["replies"].is_object() {
-				parse_comments(&data["replies"], post_link, post_author, highlighted_comment, filters, req)
+				parse_comments(&data["replies"], post_link, post_author, highlighted_comment, filters, collapsed_ids, req)
 			} else {
 				Vec::new()
 			};
-			build_comment(&comment, data, replies, post_link, post_author, highlighted_comment, filters, req)
+			build_comment(&comment, data, replies, post_link, post_author, highlighted_comment, filters, collapsed_ids, req)
 		})
 		.collect()
 }
@@ -140,6 +182,7 @@ fn query_comments(
 	highlighted_comment: &str,
 	filters: &HashSet<String>,
 	query: &str,
+	collapsed_ids: &HashSet<String>,
 	req: &Request<Body>,
 ) -> Vec<Comment> {
 	let comments = json["data"]["children"].as_array().map_or(Vec::new(), std::borrow::ToOwned::to_owned);
@@ -150,10 +193,10 @@ fn query_comments(
 
 		// If this comment contains replies, handle those too
 		if data["replies"].is_object() {
-			results.append(&mut query_comments(&data["replies"], post_link, post_author, highlighted_comment, filters, query, req));
+			results.append(&mut query_comments(&data["replies"], post_link, post_author, highlighted_comment, filters, query, collapsed_ids, req));
 		}
 
-		let c = build_comment(&comment, data, Vec::new(), post_link, post_author, highlighted_comment, filters, req);
+		let c = build_comment(&comment, data, Vec::new(), post_link, post_author, highlighted_comment, filters, collapsed_ids, req);
 		if c.body.to_lowercase().contains(&query.to_lowercase()) {
 			results.push(c);
 		}
@@ -170,6 +213,7 @@ fn build_comment(
 	post_author: &str,
 	highlighted_comment: &str,
 	filters: &HashSet<String>,
+	collapsed_ids: &HashSet<String>,
 	req: &Request<Body>,
 ) -> Comment {
 	let id = val(comment, "id");
@@ -227,7 +271,8 @@ fn build_comment(
 	// collapse stickied moderator comments.
 	let is_moderator_comment = data["distinguished"].as_str().unwrap_or_default() == "moderator";
 	let is_stickied = data["stickied"].as_bool().unwrap_or_default();
-	let collapsed = (is_moderator_comment && is_stickied) || is_filtered;
+	let user_collapsed = collapsed_ids.contains(&format!("t1_{id}"));
+	let collapsed = (is_moderator_comment && is_stickied) || is_filtered || user_collapsed;
 
 	Comment {
 		id,

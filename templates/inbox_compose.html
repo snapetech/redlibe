@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Compose message - Redlib{% endblock %}
+{% block search %}{% call utils::search("", "") %}{% endblock %}
+{% block subscriptions %}{% call utils::sub_list("") %}{% endblock %}
+
+{% block body %}
+<main>
+	<div id="column_one">
+		<h1>Compose message</h1>
+		{% if !error.is_empty() %}
+		<p class="error">{{ error }}</p>
+		{% endif %}
+		<form action="/inbox/compose" method="POST" class="compose_form">
+			<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+			<label for="to">To (username)</label>
+			<input type="text" name="to" id="to" value="{{ to }}" required placeholder="username" autocomplete="username">
+			<label for="subject">Subject</label>
+			<input type="text" name="subject" id="subject" value="{{ subject }}" required maxlength="100" placeholder="Subject">
+			<label for="text">Message</label>
+			<textarea name="text" id="text" rows="10" required placeholder="Your message..."></textarea>
+			<button type="submit" class="submit">Send</button>
+		</form>
+		<p><a href="/inbox">← Back to inbox</a></p>
+	</div>
+</main>
+{% endblock %}

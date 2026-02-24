@@ -24,7 +24,7 @@ struct SettingsTemplate {
 
 // CONSTANTS
 
-const PREFS: [&str; 19] = [
+const PREFS: [&str; 28] = [
 	"theme",
 	"front_page",
 	"layout",
@@ -44,6 +44,15 @@ const PREFS: [&str; 19] = [
 	"disable_visit_reddit_confirmation",
 	"video_quality",
 	"remove_default_feeds",
+	"hide_read",
+	"filter_keywords",
+	"filter_flairs",
+	"filter_domains",
+	"font_size",
+	"show_only_media",
+	"enable_offline",
+	"use_subreddit_theme",
+	"low_data",
 ];
 
 // FUNCTIONS
@@ -301,5 +310,47 @@ pub async fn encoded_restore(req: Request<Body>) -> Result<Response<Body>, Strin
 
 	let url = format!("/settings/restore/?{}", prefs.to_urlencoded()?);
 
+	Ok(redirect(&url))
+}
+
+/// GET /settings/export-json: return current preferences as JSON for download.
+pub async fn export_json(req: Request<Body>) -> Result<Response<Body>, String> {
+	let prefs = Preferences::new(&req);
+	let json = prefs.to_json().map_err(|e| e.to_string())?;
+	Ok(Response::builder()
+		.status(200)
+		.header("Content-Type", "application/json")
+		.header("Content-Disposition", "attachment; filename=\"redlib-settings.json\"")
+		.body(json.into())
+		.unwrap_or_default())
+}
+
+/// POST /settings/import-json: body is JSON preferences (or form field "json"). Redirects to restore to set cookies.
+pub async fn import_json(req: Request<Body>) -> Result<Response<Body>, String> {
+	let body = hyper::body::to_bytes(req.into_body())
+		.await
+		.map_err(|e| format!("Failed to get request body: {e}"))?;
+
+	if body.len() > 512 * 1024 {
+		return Err("Request body too large".to_string());
+	}
+
+	let json_str = if body.starts_with(b"{") {
+		// Raw JSON body
+		String::from_utf8(body.to_vec()).map_err(|e| format!("Invalid UTF-8: {e}"))?
+	} else {
+		// Form body with json= field
+		let form = form_urlencoded::parse(&body)
+			.find(|(key, _)| key == "json")
+			.map(|(_, value)| value.to_string())
+			.ok_or_else(|| "json parameter not found".to_string())?;
+		form
+	};
+
+	let mut prefs: Preferences =
+		serde_json::from_str(&json_str).map_err(|e| format!("Invalid JSON: {e}"))?;
+	prefs.available_themes = vec![];
+
+	let url = format!("/settings/restore/?{}", prefs.to_urlencoded().map_err(|e| e.to_string())?);
 	Ok(redirect(&url))
 }

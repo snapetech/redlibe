@@ -968,6 +968,78 @@ a.search_subreddit:hover {
     margin: 10px 0;
 }
 
+.comment_nav {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+}
+.comment_nav button {
+    padding: 4px 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+}
+.comment_nav button:hover {
+    opacity: 0.9;
+}
+
+body.font_small {
+    font-size: 0.875rem;
+}
+body.font_large {
+    font-size: 1.125rem;
+}
+
+.go_to_sub {
+    padding: 1rem 0;
+}
+.go_to_sub h2 {
+    margin-bottom: 0.75rem;
+}
+.go_to_sub form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.go_to_sub input {
+    padding: 4px 8px;
+    max-width: 200px;
+}
+.go_to_sub .helper {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    opacity: 0.85;
+}
+
+.recent_searches {
+    margin: 6px 0;
+    font-size: 0.9rem;
+}
+.recent_searches a {
+    color: var(--accent);
+}
+
+body.reader_mode nav,
+body.reader_mode footer {
+    display: none;
+}
+body.reader_mode main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-top: 0.5rem;
+}
+.reader_mode_bar {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+.reader_mode_bar a {
+    color: var(--accent);
+}
+
 .post {
     border-radius: 5px;
     background: var(--post);
@@ -1111,6 +1183,12 @@ a.search_subreddit:hover {
 
 .post_media_content,
 .post .__NoScript_PlaceHolder__,
+.gallery_counter {
+    margin: 0 0 0.5em 0;
+    font-size: 0.9em;
+    color: var(--visited);
+}
+
 .gallery {
     max-width: calc(100% - 40px);
     grid-area: post_media;
@@ -1640,6 +1718,15 @@ summary.comment_data {
 
 #settings {
     max-width: 450px;
+}
+
+.settings_search_wrap {
+    margin-bottom: 10px;
+}
+.settings_search_wrap input {
+    margin-left: 8px;
+    padding: 4px 8px;
+    width: 200px;
 }
 
 #settings_note {
@@ -2310,9 +2397,44 @@ th {
     padding: 0.45rem 0.6rem;
 }
 
-.login_field input[type="text"]:focus {
+.login_field input[type="text"]:focus,
+.login_field input[type="password"]:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+.login_field input[type="password"] {
+    background-color: var(--background);
+    border: 1px solid var(--outside);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.45rem 0.6rem;
+}
+
+.login_field textarea {
+    background-color: var(--background);
+    border: 1px solid var(--outside);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 0.45rem 0.6rem;
+    resize: vertical;
+    min-height: 6em;
+}
+
+.login_field textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.login_field_hint {
+    font-size: 0.75rem;
+    color: var(--text);
+    opacity: 0.75;
+    margin-top: 0.25rem;
 }
 
 .login_field_radio {
@@ -2363,3 +2485,101 @@ th {
     color: #fff;
 }
 .login_btn_ssh:hover { opacity: 0.88; }
+
+/* ── Reply to comment / post ─────────────────────────────────────── */
+.comment_actions { margin-top: 0.5rem; }
+.reply_btn {
+    background: none;
+    border: 1px solid var(--outside);
+    color: var(--text);
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
+.reply_btn:hover { background-color: var(--highlighted); }
+.reply_to_post_wrapper { margin: 1rem 0; }
+.reply_form_wrapper {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: var(--post);
+    border: 1px solid var(--outside);
+    border-radius: 4px;
+}
+.reply_form textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 8px;
+    margin-bottom: 8px;
+    border: 1px solid var(--outside);
+    border-radius: 3px;
+    background: var(--background);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+}
+.reply_form_actions { display: flex; gap: 8px; }
+.reply_form_actions .submit { margin: 0; }
+.reply_cancel_btn {
+    background: none;
+    border: 1px solid var(--outside);
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 12px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+.reply_cancel_btn:hover { background-color: var(--highlighted); }
+
+/* ── Custom feeds page ─────────────────────────────────────────────── */
+#feeds_page { max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+#feeds_page h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+.feeds_intro { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.5rem; }
+.feeds_error { background: rgba(220,50,47,0.12); border: 1px solid rgba(220,50,47,0.5); border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.9rem; }
+.feeds_list_section, .feeds_create_section { margin-bottom: 2rem; }
+#feeds_page h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+.feeds_empty { color: var(--muted); font-size: 0.9rem; }
+.feeds_list { list-style: none; padding: 0; margin: 0; }
+.feed_item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--outside); flex-wrap: wrap; }
+.feed_item a { font-weight: 500; }
+.feed_subs { color: var(--muted); font-size: 0.85rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed_delete_form { margin: 0; }
+.feed_delete_btn { background: none; border: 1px solid var(--outside); color: var(--text); cursor: pointer; padding: 2px 8px; border-radius: 3px; font-size: 0.8rem; }
+.feed_delete_btn:hover { background-color: var(--highlighted); }
+.feeds_form .form_row { margin-bottom: 1rem; }
+.feeds_form label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.feeds_form input[type="text"], .feeds_form textarea { width: 100%; padding: 8px; border: 1px solid var(--outside); border-radius: 3px; background: var(--background); color: var(--text); font-family: inherit; }
+.feeds_form textarea { min-height: 72px; resize: vertical; }
+.form_hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+a.feeds_manage { font-size: 0.9rem; margin-top: 0.5rem; display: inline-block; }
+
+/* Inbox */
+.inbox_tabs { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.inbox_tabs a { color: var(--accent); }
+.inbox_tabs a.selected { font-weight: 600; }
+.inbox_tabs .compose_link { margin-left: auto; }
+.inbox_list { display: flex; flex-direction: column; gap: 0.75rem; }
+.inbox_message { padding: 0.75rem; border: 1px solid var(--outside); border-radius: 4px; background: var(--post); }
+.inbox_message.unread { border-left: 3px solid var(--accent); }
+.inbox_header { margin: 0 0 0.25rem 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.inbox_subject { font-weight: 600; }
+.inbox_meta { color: var(--muted); font-size: 0.85rem; }
+.inbox_preview { margin: 0.5rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.4; }
+.inbox_link { font-size: 0.9rem; }
+.compose_form label { display: block; margin-top: 0.75rem; margin-bottom: 0.25rem; }
+.compose_form input[type="text"], .compose_form textarea { width: 100%; padding: 8px; border: 1px solid var(--outside); border-radius: 3px; background: var(--background); color: var(--text); font-family: inherit; }
+.compose_form textarea { min-height: 120px; resize: vertical; }
+.compose_form .submit { margin-top: 1rem; }
+
+/* Edit / delete (inline forms on posts and comments) */
+.inline_form { display: inline; margin: 0; }
+.inline_form .delete_btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: inherit; text-decoration: underline; }
+.inline_form .delete_btn:hover { color: var(--accent); }
+.edit_details summary { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+.edit_comment_details summary { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+.edit_form { margin-top: 0.5rem; padding: 0.5rem 0; }
+.edit_form textarea { width: 100%; min-height: 80px; padding: 6px; border: 1px solid var(--outside); border-radius: 3px; background: var(--background); color: var(--text); font-family: inherit; }
+.edit_delete_form { margin-left: 0.5rem; }
+.comment_actions .edit_comment_details { margin-left: 0.5rem; display: inline; }
+.comment_actions .edit_form { display: block; margin-top: 0.5rem; }

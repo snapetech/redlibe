@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Go to subreddit - Redlib{% endblock %}
+
+{% block subscriptions %}
+{% call utils::sub_list("") %}
+{% endblock %}
+
+{% block search %}
+{% call utils::search("", "") %}
+{% endblock %}
+
+{% block content %}
+<div id="column_one">
+	<div class="go_to_sub">
+		<h2>Go to subreddit</h2>
+		<form action="/go" method="GET" id="go_form">
+			<label for="go_r">r/</label>
+			<input type="text" id="go_r" name="r" placeholder="subreddit name" maxlength="21" pattern="[a-zA-Z0-9_]+" title="Letters, numbers, underscores only" autofocus>
+			<button type="submit" class="submit">Go</button>
+		</form>
+		<p class="helper">Enter a subreddit name to jump there. You can also type <code>r/name</code> in the search box from any page.</p>
+	</div>
+</div>
+{% endblock %}

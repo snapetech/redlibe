@@ -3,10 +3,12 @@
 use crate::{config, utils};
 // CRATES
 use crate::utils::{
-	catch_random, error, filter_posts, format_num, format_url, get_filters, info, nsfw_landing, param, redirect, rewrite_urls, setting, template, val, Post, Preferences,
+	catch_random, error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_num, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, info, nsfw_landing, param, redirect, rewrite_urls, setting, template, val, Post, Preferences,
 	Subreddit,
 };
-use crate::{client::json, server::RequestExt, server::ResponseExt};
+use crate::auth::AuthContext;
+use crate::client::{authed_post, fetch_subscribed_subreddits, json};
+use crate::server::{RequestExt, ResponseExt};
 use askama::Template;
 use cookie::Cookie;
 use htmlescape::decode_html;
@@ -16,6 +18,9 @@ use chrono::DateTime;
 use regex::Regex;
 use std::sync::LazyLock;
 use time::{Duration, OffsetDateTime};
+
+const MAX_MARK_READ_BODY: usize = 64 * 1024;
+const READ_IDS_COOKIE_CHUNK: usize = 4000;
 
 // STRUCTS
 #[derive(Template)]
@@ -165,6 +170,19 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 		match Post::fetch(&path, quarantined).await {
 			Ok((mut posts, after)) => {
 				let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
+				filter_posts_by_content(
+					&mut posts,
+					&get_filter_keywords(&req),
+					&get_filter_flairs(&req),
+					&get_filter_domains(&req),
+				);
+				if setting(&req, "hide_read") == "on" {
+					let read_ids = get_read_ids(&req);
+					filter_read_posts(&mut posts, &read_ids);
+				}
+				if setting(&req, "show_only_media") == "on" {
+					filter_media_only(&mut posts);
+				}
 				let no_posts = posts.is_empty();
 				let all_posts_hidden_nsfw = !no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
 				if sort == "new" {
@@ -230,6 +248,74 @@ pub fn can_access_quarantine(req: &Request<Body>, sub: &str) -> bool {
 	setting(req, &format!("allow_quaran_{}", sub.to_lowercase())).parse().unwrap_or_default()
 }
 
+/// Chunk read-id strings into cookie-sized comma-separated strings (max READ_IDS_COOKIE_CHUNK bytes per chunk).
+fn chunk_read_ids(ids: &[String]) -> Vec<String> {
+	let mut result = Vec::new();
+	let mut list = String::new();
+	for id in ids {
+		let need_comma = !list.is_empty();
+		let add_len = if need_comma { 1 + id.len() } else { id.len() };
+		if list.len() + add_len > READ_IDS_COOKIE_CHUNK && !list.is_empty() {
+			result.push(std::mem::take(&mut list));
+		}
+		if need_comma {
+			list.push(',');
+		}
+		list.push_str(id);
+	}
+	if !list.is_empty() {
+		result.push(list);
+	}
+	result
+}
+
+/// POST /mark-read: body ids=t3_xxx,t3_yyy — merge with existing read_ids and set cookies.
+pub async fn mark_read(req: Request<Body>) -> Result<Response<Body>, String> {
+	let existing = get_read_ids(&req);
+	let mut old_numbered_count = 1;
+	while req.cookie(&format!("read_ids{old_numbered_count}")).is_some() {
+		old_numbered_count += 1;
+	}
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_MARK_READ_BODY {
+		return Err("Request body too large".to_string());
+	}
+	let form: std::collections::HashMap<String, String> =
+		url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+	let ids_param = form.get("ids").map(|s| s.as_str()).unwrap_or("");
+	let new_ids: std::collections::HashSet<String> = ids_param
+		.split(',')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty() && (s.starts_with("t3_") || s.len() < 20))
+		.map(String::from)
+		.collect();
+	if new_ids.is_empty() {
+		let res = Response::builder().status(204).body(Body::empty()).unwrap_or_default();
+		return Ok(res);
+	}
+	let merged: std::collections::HashSet<String> = existing.union(&new_ids).cloned().collect();
+	let mut ids_list: Vec<String> = merged.into_iter().collect();
+	ids_list.sort();
+	let chunks = chunk_read_ids(&ids_list);
+	let num_chunks = chunks.len();
+	let mut response = Response::builder().status(204).body(Body::empty()).unwrap_or_default();
+	for (i, chunk) in chunks.into_iter().enumerate() {
+		let name = if i == 0 { "read_ids".to_string() } else { format!("read_ids{i}") };
+		response.insert_cookie(
+			Cookie::build((name, chunk))
+				.path("/")
+				.http_only(true)
+				.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+				.into(),
+		);
+	}
+	// Remove any old read_idsN cookies beyond what we wrote (we write read_ids, read_ids1, ... read_ids(num_chunks-1))
+	for n in num_chunks..old_numbered_count {
+		response.remove_cookie(format!("read_ids{n}"));
+	}
+	Ok(response)
+}
+
 // Join items in chunks of 4000 bytes in length for cookies
 pub fn join_until_size_limit<T: std::fmt::Display>(vec: &[T]) -> Vec<std::string::String> {
 	let mut result = Vec::new();
@@ -279,10 +365,13 @@ pub async fn subscriptions_filters(req: Request<Body>) -> Result<Response<Body>,
 	}
 
 	let query = req.uri().query().unwrap_or_default().to_string();
+	let auth = AuthContext::from_request(&req);
 
 	let preferences = Preferences::new(&req);
 	let mut sub_list = preferences.subscriptions;
 	let mut filters = preferences.filters;
+	// When logged in, track subscribe/unsubscribe so we can sync to Reddit and refresh reddit_subscriptions cookie
+	let mut reddit_actions: Vec<(String, bool)> = vec![];
 
 	// Retrieve list of posts for these subreddits to extract display names
 
@@ -326,6 +415,7 @@ pub async fn subscriptions_filters(req: Request<Body>) -> Result<Response<Body>,
 		// Modify sub list based on action
 		if action.contains(&"subscribe".to_string()) && !sub_list.contains(&part.to_owned()) {
 			// Add each sub name to the subscribed list
+			reddit_actions.push((part.to_owned(), true));
 			sub_list.push(part.to_owned());
 			filters.retain(|s| s.to_lowercase() != part.to_lowercase());
 			// Reorder sub names alphabetically
@@ -333,6 +423,7 @@ pub async fn subscriptions_filters(req: Request<Body>) -> Result<Response<Body>,
 			filters.sort_by_key(|a| a.to_lowercase());
 		} else if action.contains(&"unsubscribe".to_string()) {
 			// Remove sub name from subscribed list
+			reddit_actions.push((part.to_owned(), false));
 			sub_list.retain(|s| s.to_lowercase() != part.to_lowercase());
 		} else if action.contains(&"filter".to_string()) && !filters.contains(&part.to_owned()) {
 			// Add each sub name to the filtered list
@@ -451,6 +542,32 @@ pub async fn subscriptions_filters(req: Request<Body>) -> Result<Response<Body>,
 
 			// Increment filters cookie number
 			filters_number_to_delete_from += 1;
+		}
+	}
+
+	// When logged in, sync subscribe/unsubscribe to Reddit and refresh reddit_subscriptions cookie for Feeds nav
+	if auth.is_authenticated() && !reddit_actions.is_empty() {
+		for (sr, is_sub) in reddit_actions {
+			let action = if is_sub { "sub" } else { "unsub" };
+			let body_str = format!(
+				"action={}&sr={}",
+				action,
+				percent_encoding::utf8_percent_encode(&sr, percent_encoding::NON_ALPHANUMERIC)
+			);
+			let _ = authed_post("/api/subscribe".to_string(), body_str, &auth).await;
+		}
+		if let Ok(subs) = fetch_subscribed_subreddits(&auth).await {
+			if subs.is_empty() {
+				response.remove_cookie("reddit_subscriptions".to_string());
+			} else {
+				response.insert_cookie(
+					Cookie::build(("reddit_subscriptions", subs.join("+")))
+						.path("/")
+						.http_only(true)
+						.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+						.into(),
+				);
+			}
 		}
 	}
 
@@ -575,6 +692,16 @@ async fn subreddit(sub: &str, quarantined: bool) -> Result<Subreddit, String> {
 	let community_icon: &str = res["data"]["community_icon"].as_str().unwrap_or_default();
 	let icon = if community_icon.is_empty() { val(&res, "icon_img") } else { community_icon.to_string() };
 
+	let key_color: String = res["data"]["key_color"]
+		.as_str()
+		.map(|s| s.trim().to_string())
+		.unwrap_or_default();
+	let key_color = if key_color.starts_with('#') && key_color.len() >= 4 {
+		key_color
+	} else {
+		String::new()
+	};
+
 	Ok(Subreddit {
 		name: val(&res, "display_name"),
 		title: val(&res, "title"),
@@ -586,6 +713,7 @@ async fn subreddit(sub: &str, quarantined: bool) -> Result<Subreddit, String> {
 		active: format_num(active),
 		wiki: res["data"]["wiki_enabled"].as_bool().unwrap_or_default(),
 		nsfw: res["data"]["over18"].as_bool().unwrap_or_default(),
+		key_color,
 	})
 }
 

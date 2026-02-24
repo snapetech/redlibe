@@ -48,11 +48,20 @@
 				<a href="/r/all">All</a>
 			{% endif %}
 			{% if prefs.subscriptions.len() > 0 %}
-				<p>REDDIT FEEDS</p>
+				<p>SUBSCRIPTIONS</p>
 				{% for sub in prefs.subscriptions %}
 					<a href="/r/{{ sub }}" {% if sub == current %}class="selected"{% endif %}>{{ sub }}</a>
 				{% endfor %}
 			{% endif %}
+			{% if prefs.custom_feeds_parsed().len() > 0 %}
+				<p>CUSTOM FEEDS</p>
+				{% for f in prefs.custom_feeds_parsed() %}
+					<a href="{{ f.link }}" {% if current == f.subreddits %}class="selected"{% endif %}>{{ f.name }}</a>
+				{% endfor %}
+			{% endif %}
+			<a href="/feeds" class="feeds_manage" title="Create or edit custom feeds">Manage feeds</a>
+			<p>QUICK</p>
+			<a href="/go" title="Jump to a subreddit by name">Go to r/...</a>
 		</div>
 	</details>
 {%- endmacro %}
@@ -159,10 +168,21 @@
 	{% call render_hls_notification(post.permalink[1..]) %}
 	{% endif %}
 	{% else if post.post_type == "gallery" %}
-	<div class="gallery">
+	<div class="gallery" data-gallery-count="{{ post.gallery.len() }}">
+		<p class="gallery_counter">Gallery — {{ post.gallery.len() }} image{% if post.gallery.len() != 1 %}s{% endif %}</p>
 	{% for image in post.gallery -%}
 		<figure>
-			<a href="{{ image.url }}" ><img loading="lazy" alt="Gallery image" src="{{ image.url }}"/></a>
+			<a href="{{ image.url }}">
+			{% if prefs.low_data == "on" %}
+			{% if image.preview_url != "" %}
+			<img loading="lazy" alt="Gallery image" src="{{ image.preview_url }}"/>
+			{% else %}
+			<img loading="lazy" alt="Gallery image" src="{{ image.url }}"/>
+			{% endif %}
+			{% else %}
+			<img loading="lazy" alt="Gallery image" src="{{ image.url }}"/>
+			{% endif %}
+			</a>
 			<figcaption>
 				<p>{{ image.caption }}</p>
 				{% if image.outbound_url.len() > 0 %}
@@ -188,7 +208,6 @@
     &#x2022;
     {% endif %}
     <span class="label"> Upvotes</span></div>
-	{% call vote_buttons(format!("t3_{}", post.id), post.user_vote, post.permalink, prefs.csrf_token) %}
 	<div class="post_footer">
 		<ul id="post_links">
 			<li>
@@ -217,6 +236,32 @@
 				</a>
 			</li>
 			{% endif %}
+			{% if prefs.logged_in && prefs.username == post.author.name %}
+			<li>
+				<form method="POST" action="/edit" class="inline_form">
+					<input type="hidden" name="thing_id" value="t3_{{ post.id }}">
+					<input type="hidden" name="action" value="delete">
+					<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+					<input type="hidden" name="return_to" value="{{ post.permalink }}">
+					<button type="submit" class="delete_btn" title="Delete post">delete</button>
+				</form>
+			</li>
+			{% if post.post_type == "self" %}
+			<li>
+				<details class="edit_details">
+					<summary>edit</summary>
+					<form method="POST" action="/edit" class="edit_form">
+						<input type="hidden" name="thing_id" value="t3_{{ post.id }}">
+						<input type="hidden" name="action" value="edit">
+						<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+						<input type="hidden" name="return_to" value="{{ post.permalink }}">
+						<textarea name="text" rows="8" required>{{ post.body|e }}</textarea>
+						<button type="submit" class="submit">Save</button>
+					</form>
+				</details>
+			</li>
+			{% endif %}
+			{% endif %}
 		</ul>
 		<p>{{ post.upvote_ratio }}%<span id="upvoted"> Upvoted</span></p>
 	</div>
@@ -242,7 +287,7 @@
 
 {% macro post_in_list(post) -%}
 {% set post_should_be_blurred = (post.flags.nsfw && prefs.blur_nsfw=="on") || (post.flags.spoiler && prefs.blur_spoiler=="on") -%}
-<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}">
+<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}" data-post-id="t3_{{ post.id }}">
 	<p class="post_header">
 		{% let community -%}
 		{% if post.community.starts_with("u_") -%}

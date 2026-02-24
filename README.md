@@ -1,6 +1,9 @@
 # redlib-extended
 
-> A fork of [Redlib](https://github.com/redlib-org/redlib) extending the privacy-first Reddit front-end with user authentication, OAuth, a REST API, voting, and more.
+> A fork of [Redlib](https://github.com/redlib-org/redlib) extending the privacy-first Reddit front-end with user authentication, OAuth, a REST API, voting, SSH session import, and more.
+
+**Full feature list and details:** see [features.md](features.md).  
+**Feature gap vs full Reddit clients (Sync/Hydra) and prioritized backlog:** see [docs/FEATURE_GAP_BACKLOG.md](docs/FEATURE_GAP_BACKLOG.md).
 
 ---
 
@@ -14,6 +17,7 @@
 
 ### User Authentication
 - Reddit OAuth 2.0 login flow (authorization code grant)
+- **SSH session import** — log in without OAuth by importing your Reddit session from a Firefox or LibreWolf profile on a remote Linux host (see [SSH session import](#ssh-session-import) below)
 - Secure session management via signed, server-side cookies
 - Login / logout UI integrated into the existing Redlib interface
 - Optional: anonymous browsing remains fully supported without an account
@@ -34,13 +38,52 @@
 - Vote state reflected in the UI (no direct browser-to-Reddit requests)
 - Requires a logged-in session
 
-### Planned / In Progress
-- Comment submission and reply
-- Post submission (text, link, image)
-- Subreddit subscription management
-- User flair display
-- Saved posts and comments
-- Moderation queue (basic)
+### SSH session import
+
+You can sign in by importing the Reddit session cookie from a browser on a machine you can SSH into. No Reddit OAuth app is required.
+
+**Requirements**
+
+- **Remote host (the machine you SSH into):**
+  - **Linux** — Supported paths and the import script are Linux-only.
+  - **SSH** — `sshd` must be running; the redlib-extended server connects to this host via SSH.
+  - **Browser** — One of:
+    - **LibreWolf** — profile at `~/.librewolf` (default)
+    - **Firefox** — profile at `~/.mozilla/firefox`
+  - **sqlite3** — installed on the remote host (used to read `cookies.sqlite`).
+  - You must have logged into Reddit in that browser so the `token_v2` cookie exists.
+
+- **Server (where redlib-extended runs):** The image includes `openssh-client` and `sshpass` for key and password auth.
+
+**How to use**
+
+1. Open the instance login page and choose **Import session via SSH**.
+2. Enter **SSH host** and **SSH user**.
+3. Provide at least one of:
+   - **SSH private key** — paste your private key into the textarea, or
+   - **SSH password** — enter the SSH password (server uses `sshpass`).
+4. Select **LibreWolf** or **Firefox** (profile paths above).
+5. Click **Import session**. The server runs a one-off script on the remote host to read `token_v2` from the browser’s `cookies.sqlite`, then creates a session for you.
+
+Keys and passwords are used only for that request and are not stored. See [features.md](features.md) for security notes and full details.
+
+**SSH import without pasting a key (e.g. k3s on the same host)**  
+If redlib-extended runs in a pod on a host you already SSH into (e.g. kspld0), you can use a key that lives in the cluster so users don’t paste anything: (1) Add the **public** key to the SSH host (e.g. `~/.ssh/authorized_keys` for `keith@kspld0`). (2) Create a Kubernetes secret from the **private** key:
+
+```bash
+kubectl create secret generic redlibe-ssh-key -n redlibe --from-file=ssh-privatekey=/home/keith/.ssh/id_ed25519
+```
+
+(3) The deployment mounts this at `/run/secrets/redlibe-ssh-key/ssh-privatekey` and sets `REDLIB_SSH_HOST`, `REDLIB_SSH_USER`, `REDLIB_SSH_KEY`. On the login form, leave the key field empty and (if needed) enter only host/user; the app uses the mounted key to log in.
+
+### Comment reply and custom feeds
+- **Reply to comments and posts** — When logged in, use **Reply** on any comment or **Add a comment** on a post. Your reply is submitted to Reddit via the API (requires `submit` scope; re-login if you signed in before this was added).
+- **Custom feeds** — Create named multireddits (e.g. “Tech” = rust + programming + linux) from **Feeds → Manage feeds** or `/feeds`. They appear in the Feeds menu and at `/feed/YourFeedName`. Stored in a cookie; create, edit, and delete from the manage page.
+
+### Planned / In Progress (see [feature gap backlog](docs/FEATURE_GAP_BACKLOG.md))
+- **Must-have:** Post submission (text/link/image), edit/delete own content, saved/upvoted/hidden listing pages, Reddit subscriptions in Feeds, inbox + private messages
+- **Nice-to-have:** Multiple accounts, hide read / keyword filters, media download/share, search UX, custom theme editor
+- Subreddit subscription management (API done; UX to pull Reddit subs into nav), user flair display, moderation queue (basic)
 
 ---
 
@@ -65,7 +108,7 @@ redlib-extended is written in Rust and inherits Redlib's stack:
 ### Prerequisites
 
 - Rust 1.81+
-- A Reddit OAuth application ([create one here](https://www.reddit.com/prefs/apps))
+- For OAuth login: a Reddit OAuth application ([create one here](https://www.reddit.com/prefs/apps)). Optional if you use [SSH session import](#ssh-session-import) only.
 
 ### Environment Variables
 

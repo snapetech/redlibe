@@ -9,6 +9,8 @@
 	{% endif %}
 {% endblock %}
 
+{% block body_extra_class %}{% if reader_mode %} reader_mode{% endif %}{% endblock %}
+
 {% block search %}
 	{% call utils::search(["/r/", post.community.as_str()].concat(), "") %}
 {% endblock %}
@@ -49,6 +51,11 @@
 
 {% block content %}
 	<div id="column_one">
+		{% if reader_mode %}
+		<p class="reader_mode_bar"><a href="{{ url_without_query }}">← Exit reader mode</a></p>
+		{% else %}
+		<p class="reader_mode_bar"><a href="{{ url }}?reader=1">Reader mode</a></p>
+		{% endif %}
 		{% call utils::post(post) %}
 
 		<!-- SORT FORM -->
@@ -79,9 +86,34 @@
       {% endif %}
       </div>
 
+		{% if prefs.logged_in %}
+		<!-- Reply to post (top-level comment) -->
+		<div class="reply_to_post_wrapper">
+			<button type="button" class="reply_btn" id="reply_to_post_btn">Add a comment</button>
+			<div class="reply_form_wrapper" id="reply-to-post" hidden>
+				<form class="reply_form" method="POST" action="/comment">
+					<input type="hidden" name="parent" value="t3_{{ post.id }}">
+					<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+					<input type="hidden" name="return_to" value="{{ url }}">
+					<textarea name="text" rows="4" placeholder="Write your comment..." required maxlength="10000"></textarea>
+					<div class="reply_form_actions">
+						<button type="submit" class="submit">Post comment</button>
+						<button type="button" class="reply_cancel_btn">Cancel</button>
+					</div>
+				</form>
+			</div>
+		</div>
+		{% endif %}
+
 		<!-- COMMENTS -->
+		{% if comments.len() > 0 %}
+		<div id="comment_nav" class="comment_nav">
+			<button type="button" id="comment_prev" title="Previous top-level comment (k)">↑ Prev</button>
+			<button type="button" id="comment_next" title="Next top-level comment (j)">↓ Next</button>
+		</div>
+		{% endif %}
 		{% for c in comments -%}
-		<div class="thread">
+		<div class="thread" data-top-level-comment>
 			{% if single_thread %}
 			<p class="thread_nav"><a href="{{ post.permalink }}">View all comments</a></p>
 			{% if c.parent_kind == "t1" %}
@@ -94,4 +126,60 @@
 		{%- endfor %}
 
 	</div>
+	<script>
+	(function() {
+		// Persist comment collapse state
+		document.querySelectorAll("details.comment_right[data-comment-id]").forEach(function(details) {
+			details.addEventListener("toggle", function() {
+				var id = this.getAttribute("data-comment-id");
+				if (!id) return;
+				var action = this.open ? "expand" : "collapse";
+				fetch("/comment-collapse", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "id=" + encodeURIComponent(id) + "&action=" + action, credentials: "same-origin" }).catch(function(){});
+			});
+		});
+		// Next/prev top-level comment
+		var threads = Array.prototype.slice.call(document.querySelectorAll(".thread[data-top-level-comment]"));
+		function scrollToThread(index) {
+			if (index >= 0 && index < threads.length) threads[index].scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+		document.getElementById("comment_prev")?.addEventListener("click", function() {
+			var i = threads.findIndex(function(t) { return t.getBoundingClientRect().top >= -10; });
+			scrollToThread(i <= 0 ? threads.length - 1 : i - 1);
+		});
+		document.getElementById("comment_next")?.addEventListener("click", function() {
+			var i = threads.findIndex(function(t) { return t.getBoundingClientRect().top > 50; });
+			scrollToThread(i < 0 ? 0 : (i >= threads.length - 1 ? 0 : i + 1));
+		});
+		document.addEventListener("keydown", function(e) {
+			if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+			if (e.key === "j") { document.getElementById("comment_next")?.click(); e.preventDefault(); }
+			else if (e.key === "k") { document.getElementById("comment_prev")?.click(); e.preventDefault(); }
+		});
+	})();
+	</script>
+	{% if prefs.logged_in %}
+	<script>
+	(function() {
+		document.getElementById("reply_to_post_btn")?.addEventListener("click", function() {
+			var el = document.getElementById("reply-to-post");
+			if (el) { el.hidden = !el.hidden; }
+		});
+		document.querySelectorAll(".reply_btn").forEach(function(btn) {
+			btn.addEventListener("click", function() {
+				var parent = btn.closest(".comment");
+				if (!parent) return;
+				var id = btn.getAttribute("data-parent-fullname")?.replace("t1_", "");
+				var wrapper = id ? parent.querySelector("#reply-" + id) : null;
+				if (wrapper) wrapper.hidden = !wrapper.hidden;
+			});
+		});
+		document.querySelectorAll(".reply_cancel_btn").forEach(function(btn) {
+			btn.addEventListener("click", function() {
+				var w = btn.closest(".reply_form_wrapper");
+				if (w) w.hidden = true;
+			});
+		});
+	})();
+	</script>
+	{% endif %}
 {% endblock %}

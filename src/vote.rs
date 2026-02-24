@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use hyper::{Body, Request, Response};
 
-use crate::auth::{validate_csrf_token, AuthContext};
+use crate::auth::{update_session_cookie, validate_csrf_token, AuthContext};
 use crate::client::authed_post;
 use crate::utils::redirect;
 
@@ -81,10 +81,13 @@ pub async fn submit(req: Request<Body>) -> Result<Response<Body>, String> {
 		dir,
 	);
 
-	authed_post("/api/vote".to_string(), body_str, &auth).await?;
+	let (_, session_updated) = authed_post("/api/vote".to_string(), body_str, &auth).await?;
 
-	// Redirect back to where the user came from
-	Ok(redirect(return_to))
+	let mut res = redirect(return_to);
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }
 
 /// `POST /r/:sub/comments/:id/save` — save or unsave a post/comment.
@@ -114,7 +117,11 @@ pub async fn save(req: Request<Body>) -> Result<Response<Body>, String> {
 	let endpoint = if action == "unsave" { "/api/unsave" } else { "/api/save" };
 	let body_str = format!("id={}", percent_encoding::utf8_percent_encode(thing_id, percent_encoding::NON_ALPHANUMERIC));
 
-	authed_post(endpoint.to_string(), body_str, &auth).await?;
+	let (_, session_updated) = authed_post(endpoint.to_string(), body_str, &auth).await?;
 
-	Ok(redirect(return_to))
+	let mut res = redirect(return_to);
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }

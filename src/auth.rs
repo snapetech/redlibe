@@ -27,6 +27,7 @@ use sha2::Sha256;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
+use crate::client;
 use crate::config::{set_runtime_user_agent, CONFIG};
 use crate::server::{RequestExt, ResponseExt};
 use crate::utils::{redirect, template, Preferences};
@@ -43,8 +44,16 @@ struct LoginPage<'a> {
 	ssh_user: String,
 }
 
-/// Maximum POST body size accepted by auth handlers (4 KiB — login/logout forms are tiny).
-const MAX_BODY_SIZE: usize = 4 * 1024;
+/// Maximum POST body size accepted by auth handlers (16 KiB — allows pasted SSH private key).
+const MAX_BODY_SIZE: usize = 16 * 1024;
+
+/// Holds path to a temporary private key file; removes it on drop.
+struct TempKeyFile(std::path::PathBuf);
+impl Drop for TempKeyFile {
+	fn drop(&mut self) {
+		let _ = std::fs::remove_file(&self.0);
+	}
+}
 
 /// Ephemeral 32-byte key used when `REDLIB_SESSION_SECRET` is not configured.
 /// Sessions encrypted with this key do NOT survive server restarts.
@@ -64,7 +73,7 @@ pub const SESSION_COOKIE: &str = "rl_session";
 const CSRF_COOKIE: &str = "rl_csrf";
 
 /// Reddit OAuth scopes requested during the user login flow.
-const OAUTH_SCOPES: &str = "identity read vote subscribe history save";
+const OAUTH_SCOPES: &str = "identity read vote subscribe history save submit privatemessages";
 
 // ----- Session data -----
 
@@ -160,6 +169,15 @@ impl AuthContext {
 	/// Whether there is an active authenticated session (user or raw token).
 	pub fn is_authenticated(&self) -> bool {
 		!matches!(self, AuthContext::Anonymous)
+	}
+
+	/// Return a reference to the session data when the context is a user session.
+	/// Used by the client layer to refresh the access token on 401 and return updated session to set cookie.
+	pub fn session_data(&self) -> Option<&SessionData> {
+		match self {
+			AuthContext::UserSession(s) => Some(s),
+			_ => None,
+		}
 	}
 }
 
@@ -299,8 +317,21 @@ pub async fn login_page(req: Request<Body>) -> Result<Response<Body>, String> {
 
 /// `POST /login/reddit` — generate a CSRF state token, then redirect to Reddit's
 /// OAuth consent page.
-pub async fn login_reddit(_req: Request<Body>) -> Result<Response<Body>, String> {
-	let client_id = CONFIG.oauth_client_id.clone().ok_or("REDLIB_OAUTH_CLIENT_ID is not configured")?;
+pub async fn login_reddit(req: Request<Body>) -> Result<Response<Body>, String> {
+	let client_id = match CONFIG.oauth_client_id.as_deref() {
+		Some(id) if !id.trim().is_empty() && !id.eq_ignore_ascii_case("placeholder") => id.to_string(),
+		_ => {
+			let prefs = Preferences::new(&req);
+			let ssh_host = CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string());
+			let ssh_user = CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string());
+			return render_login_error(
+				&prefs,
+				&ssh_host,
+				&ssh_user,
+				"Reddit OAuth is not configured. Set REDLIB_OAUTH_CLIENT_ID and REDLIB_OAUTH_CLIENT_SECRET in redlibe-secrets. In your Reddit app (reddit.com/prefs/apps) set redirect URI to https://redlibe.home/auth/callback.",
+			);
+		}
+	};
 	let redirect_uri = CONFIG.oauth_redirect_uri.clone().ok_or("REDLIB_OAUTH_REDIRECT_URI is not configured")?;
 
 	// CSRF state token — stored in a short-lived cookie, compared on callback
@@ -357,12 +388,102 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 		return render_login_error(&prefs, &ssh_host, &ssh_user, "Invalid SSH user — only alphanumeric, underscores, hyphens allowed");
 	}
 
-	let ssh_key = CONFIG.ssh_key.clone().unwrap_or_else(|| "~/.ssh/id_ed25519".to_string());
-	let ssh_key_expanded = shellexpand::tilde(&ssh_key).into_owned();
+	let has_pasted_key = form.get("ssh_private_key").map(|s| !s.trim().is_empty()).unwrap_or(false);
+	let ssh_password = form.get("ssh_password").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+	let has_config_key = CONFIG.ssh_key.as_ref().map(|k| !k.trim().is_empty()).unwrap_or(false);
+	if !has_pasted_key && ssh_password.is_none() && !has_config_key {
+		return render_login_error(&prefs, &ssh_host, &ssh_user, "Provide either an SSH private key or an SSH password (or both).");
+	}
 
-	// Run the extraction asynchronously
-	match ssh_extract_token(&ssh_host, &ssh_user, &ssh_key_expanded, browser).await {
-		Err(e) => render_login_error(&prefs, &ssh_host, &ssh_user, &format!("SSH extraction failed: {e}")),
+	// Use pasted private key from form if provided; otherwise we'll use password or config key
+	let (key_path_opt, _temp_guard) = if let Some(pasted) = form.get("ssh_private_key").map(|s| s.trim()) {
+		if pasted.is_empty() {
+			(None, None)
+		} else {
+			// Normalize for OpenSSH: strip BOM, CRLF -> LF, ensure trailing newline (avoids "error in libcrypto")
+			let normalized = pasted
+				.strip_prefix('\u{feff}')
+				.unwrap_or(pasted)
+				.replace("\r\n", "\n")
+				.replace('\r', "\n");
+			let normalized = if normalized.ends_with('\n') {
+				normalized
+			} else {
+				format!("{normalized}\n")
+			};
+			// Detect public key paste (one line starting with "ssh-rsa " or "ssh-ed25519 ") — SSH needs the private key to connect
+			if normalized.starts_with("ssh-rsa ") || normalized.starts_with("ssh-ed25519 ") {
+				if normalized.lines().count() <= 1 {
+					return render_login_error(
+						&prefs,
+						&ssh_host,
+						&ssh_user,
+						"You pasted a public key (the one-line .pub file). SSH login requires your private key: open the file without .pub (e.g. ~/.ssh/id_ed25519) and paste its full contents (starts with -----BEGIN ... PRIVATE KEY-----).",
+					);
+				}
+			}
+			let temp_dir = std::env::temp_dir();
+			let path = temp_dir.join(format!("redlib_ssh_{}.key", Uuid::new_v4()));
+			if std::fs::write(&path, normalized).is_err() {
+				return render_login_error(&prefs, &ssh_host, &ssh_user, "Could not write temporary key file");
+			}
+			#[cfg(unix)]
+			{
+				use std::os::unix::fs::PermissionsExt;
+				if std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).is_err() {
+					let _ = std::fs::remove_file(&path);
+					return render_login_error(&prefs, &ssh_host, &ssh_user, "Could not set key file permissions");
+				}
+			}
+			let path_str = path.to_string_lossy().into_owned();
+			(Some(path_str), Some(TempKeyFile(path)))
+		}
+	} else {
+		(None, None)
+	};
+
+	// If no pasted key, use config key path only when password not provided (so key-only from server config)
+	let key_path_opt = if key_path_opt.is_some() {
+		key_path_opt
+	} else if ssh_password.is_none() {
+		let k = CONFIG.ssh_key.clone().unwrap_or_else(|| "~/.ssh/id_ed25519".to_string());
+		Some(shellexpand::tilde(&k).into_owned())
+	} else {
+		None
+	};
+
+	// Run the extraction: key+passphrase when both provided, else key-only, else password-only
+	let result = match (key_path_opt.as_ref(), ssh_password.as_ref()) {
+		(Some(kp), Some(pass)) => {
+			log::info!("SSH import: using key auth with passphrase");
+			ssh_extract_token_key_passphrase(&ssh_host, &ssh_user, kp, pass, browser).await
+		}
+		(Some(kp), None) => {
+			log::info!("SSH import: using key-only auth");
+			ssh_extract_token(&ssh_host, &ssh_user, kp, browser).await
+		}
+		(None, Some(pass)) => {
+			log::info!("SSH import: using password auth");
+			ssh_extract_token_with_password(&ssh_host, &ssh_user, pass, browser).await
+		}
+		(None, None) => {
+			return render_login_error(&prefs, &ssh_host, &ssh_user, "Provide either an SSH private key or an SSH password (or both).");
+		}
+	};
+
+	match result {
+		Err(e) => {
+			let msg = if e.contains("Load key") && (e.contains("libcrypto") || e.contains("Permission denied (publickey)")) {
+				format!(
+					"SSH extraction failed: {e} \
+					— Use your private key (starts with -----BEGIN ... PRIVATE KEY-----), not the public key. \
+					If the key is passphrase-protected, enter the passphrase in the password field.",
+				)
+			} else {
+				format!("SSH extraction failed: {e}")
+			};
+			render_login_error(&prefs, &ssh_host, &ssh_user, &msg)
+		}
 		Ok((bearer_token, user_agent)) => {
 			// Fetch username from Reddit
 			let username = fetch_username(&bearer_token).await.unwrap_or_else(|_| "unknown".to_string());
@@ -426,7 +547,8 @@ async fn ssh_extract_token(host: &str, user: &str, key_path: &str, browser: &str
 		r#"set -e
 DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
 [ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
-TOKEN=$(sqlite3 "$DB" 'SELECT value FROM moz_cookies WHERE host=".reddit.com" AND name="token_v2" ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
+CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
+TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
 [ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
 echo "TOKEN=$TOKEN"
 VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
@@ -464,8 +586,15 @@ echo "ARCH=$ARCH""#,
 				return Err(msg.to_string());
 			}
 		}
-		log::error!("SSH extraction stderr: {stderr}");
-		return Err(format!("SSH command failed (exit {})", output.status.code().unwrap_or(-1)));
+		let code = output.status.code().unwrap_or(-1);
+		log::error!(
+			"SSH extraction (key-only) failed exit={code} stderr_len={} stderr=\"{}\" stdout_preview=\"{}\"",
+			stderr.len(),
+			stderr.replace('\n', " "),
+			stdout.lines().take(3).collect::<Vec<_>>().join(" ").chars().take(200).collect::<String>()
+		);
+		let hint = if stderr.is_empty() { String::new() } else { format!(" — {stderr}") };
+		return Err(format!("SSH command failed (exit {}){hint}", code));
 	}
 
 	// Parse key=value lines
@@ -512,6 +641,210 @@ echo "ARCH=$ARCH""#,
 	Ok((bearer, ua))
 }
 
+/// Same as ssh_extract_token but uses sshpass to supply the key passphrase (for encrypted private keys).
+/// Runs: sshpass -p passphrase ssh -i key_path -o BatchMode=no ...
+async fn ssh_extract_token_key_passphrase(
+	host: &str,
+	user: &str,
+	key_path: &str,
+	passphrase: &str,
+	browser: &str,
+) -> Result<(String, String), String> {
+	let find_path = match browser {
+		"firefox" => "~/.mozilla/firefox",
+		_ => "~/.librewolf",
+	};
+	let remote_script = format!(
+		r#"set -e
+DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
+TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
+[ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
+echo "TOKEN=$TOKEN"
+VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+ARCH=$(uname -m)
+echo "VERSION=$VERSION"
+echo "ARCH=$ARCH""#,
+		find_path = find_path,
+		browser = browser,
+	);
+
+	// BatchMode=no so ssh will prompt for key passphrase and sshpass can supply it
+	let output = tokio::process::Command::new("sshpass")
+		.args([
+			"-p",
+			passphrase,
+			"ssh",
+			"-i",
+			key_path,
+			"-o",
+			"BatchMode=no",
+			"-o",
+			"ConnectTimeout=15",
+			"-o",
+			"StrictHostKeyChecking=accept-new",
+			&format!("{user}@{host}"),
+			&remote_script,
+		])
+		.output()
+		.await
+		.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
+
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let stderr = String::from_utf8_lossy(&output.stderr);
+
+	if !output.status.success() {
+		for line in stdout.lines() {
+			if let Some(msg) = line.strip_prefix("ERROR=") {
+				return Err(msg.to_string());
+			}
+		}
+		let code = output.status.code().unwrap_or(-1);
+		log::error!(
+			"SSH extraction (key+passphrase) failed exit={code} stderr_len={} stderr=\"{}\" stdout_preview=\"{}\"",
+			stderr.len(),
+			stderr.replace('\n', " "),
+			stdout.lines().take(3).collect::<Vec<_>>().join(" ").chars().take(200).collect::<String>()
+		);
+		let hint = if stderr.is_empty() { String::new() } else { format!(" — {stderr}") };
+		return Err(format!("SSH command failed (exit {}){hint}", code));
+	}
+
+	let mut token_raw = String::new();
+	let mut version = String::new();
+	let mut arch = String::new();
+	for line in stdout.lines() {
+		if let Some(v) = line.strip_prefix("TOKEN=") {
+			token_raw = v.to_string();
+		} else if let Some(v) = line.strip_prefix("VERSION=") {
+			version = v.to_string();
+		} else if let Some(v) = line.strip_prefix("ARCH=") {
+			arch = v.to_string();
+		} else if let Some(msg) = line.strip_prefix("ERROR=") {
+			return Err(msg.to_string());
+		}
+	}
+	if token_raw.is_empty() {
+		return Err("No token found in SSH output".to_string());
+	}
+
+	let bearer = decode_browser_token(&token_raw).unwrap_or_else(|| {
+		log::warn!("token_v2 could not be decoded as JWT; using raw value");
+		token_raw
+	});
+	let ua = if !version.is_empty() && !arch.is_empty() {
+		let ua_arch = match arch.as_str() {
+			"amd64" | "x86_64" => "x86_64",
+			"aarch64" | "arm64" => "aarch64",
+			"i686" | "i386" => "i686",
+			other => other,
+		};
+		let major = version.split('.').next().unwrap_or(&version);
+		format!("Mozilla/5.0 (X11; Linux {ua_arch}; rv:{version}) Gecko/20100101 Firefox/{major}.0")
+	} else {
+		String::new()
+	};
+	Ok((bearer, ua))
+}
+
+/// Same as ssh_extract_token but authenticates with password via sshpass.
+async fn ssh_extract_token_with_password(host: &str, user: &str, password: &str, browser: &str) -> Result<(String, String), String> {
+	let find_path = match browser {
+		"firefox" => "~/.mozilla/firefox",
+		_ => "~/.librewolf",
+	};
+	let remote_script = format!(
+		r#"set -e
+DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
+TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
+[ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
+echo "TOKEN=$TOKEN"
+VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+ARCH=$(uname -m)
+echo "VERSION=$VERSION"
+echo "ARCH=$ARCH""#,
+		find_path = find_path,
+		browser = browser,
+	);
+
+	let output = tokio::process::Command::new("sshpass")
+		.args([
+			"-p",
+			password,
+			"ssh",
+			"-o",
+			"BatchMode=yes",
+			"-o",
+			"ConnectTimeout=15",
+			"-o",
+			"StrictHostKeyChecking=accept-new",
+			&format!("{user}@{host}"),
+			&remote_script,
+		])
+		.output()
+		.await
+		.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
+
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let stderr = String::from_utf8_lossy(&output.stderr);
+
+	if !output.status.success() {
+		for line in stdout.lines() {
+			if let Some(msg) = line.strip_prefix("ERROR=") {
+				return Err(msg.to_string());
+			}
+		}
+		let code = output.status.code().unwrap_or(-1);
+		log::error!(
+			"SSH extraction (password) failed exit={code} stderr_len={} stderr=\"{}\" stdout_preview=\"{}\"",
+			stderr.len(),
+			stderr.replace('\n', " "),
+			stdout.lines().take(3).collect::<Vec<_>>().join(" ").chars().take(200).collect::<String>()
+		);
+		let hint = if stderr.is_empty() { String::new() } else { format!(" — {stderr}") };
+		return Err(format!("SSH command failed (exit {}){hint}", code));
+	}
+
+	let mut token_raw = String::new();
+	let mut version = String::new();
+	let mut arch = String::new();
+	for line in stdout.lines() {
+		if let Some(v) = line.strip_prefix("TOKEN=") {
+			token_raw = v.to_string();
+		} else if let Some(v) = line.strip_prefix("VERSION=") {
+			version = v.to_string();
+		} else if let Some(v) = line.strip_prefix("ARCH=") {
+			arch = v.to_string();
+		} else if let Some(msg) = line.strip_prefix("ERROR=") {
+			return Err(msg.to_string());
+		}
+	}
+	if token_raw.is_empty() {
+		return Err("No token found in SSH output".to_string());
+	}
+
+	let bearer = decode_browser_token(&token_raw).unwrap_or_else(|| {
+		log::warn!("token_v2 could not be decoded as JWT; using raw value");
+		token_raw
+	});
+	let ua = if !version.is_empty() && !arch.is_empty() {
+		let ua_arch = match arch.as_str() {
+			"amd64" | "x86_64" => "x86_64",
+			"aarch64" | "arm64" => "aarch64",
+			"i686" | "i386" => "i686",
+			other => other,
+		};
+		let major = version.split('.').next().unwrap_or(&version);
+		format!("Mozilla/5.0 (X11; Linux {ua_arch}; rv:{version}) Gecko/20100101 Firefox/{major}.0")
+	} else {
+		String::new()
+	};
+	Ok((bearer, ua))
+}
+
 /// `GET /auth/callback` — handle Reddit's OAuth redirect, exchange the code
 /// for tokens, and set the encrypted session cookie.
 pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String> {
@@ -544,6 +877,10 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 
 	// Fetch the username from Reddit's /api/v1/me
 	let username = fetch_username(&tokens.access_token).await.unwrap_or_else(|_| "unknown".to_string());
+	// Populate Reddit subscriptions for Feeds nav (fetch before moving tokens into session)
+	let reddit_subs: Vec<String> = client::fetch_subscribed_subreddits_with_bearer(&tokens.access_token)
+		.await
+		.unwrap_or_default();
 
 	let expires_at = OffsetDateTime::now_utc().unix_timestamp() + tokens.expires_in as i64;
 
@@ -567,6 +904,17 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
 			.into(),
 	);
+	if !reddit_subs.is_empty() {
+		response.insert_cookie(
+			Cookie::build(("reddit_subscriptions", reddit_subs.join("+")))
+				.path("/")
+				.http_only(true)
+				.secure(secure_cookies())
+				.same_site(SameSite::Lax)
+				.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+				.into(),
+		);
+	}
 	// Clear the CSRF cookie — it's served its purpose
 	response.remove_cookie(CSRF_COOKIE.to_string());
 
@@ -592,6 +940,7 @@ pub async fn logout(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let mut response = redirect("/");
 	response.remove_cookie(SESSION_COOKIE.to_string());
+	response.remove_cookie("reddit_subscriptions".to_string());
 	Ok(response)
 }
 

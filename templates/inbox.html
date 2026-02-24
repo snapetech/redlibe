@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Inbox - Redlib{% endblock %}
+{% block search %}{% call utils::search("", "") %}{% endblock %}
+{% block subscriptions %}{% call utils::sub_list("") %}{% endblock %}
+
+{% block body %}
+<main>
+	<div id="column_one">
+		<h1>Inbox</h1>
+		<div class="inbox_tabs">
+			<a href="/inbox" {% if tab == "inbox" %}class="selected"{% endif %}>All</a>
+			<a href="/inbox?tab=unread" {% if tab == "unread" %}class="selected"{% endif %}>Unread</a>
+			<a href="/inbox?tab=sent" {% if tab == "sent" %}class="selected"{% endif %}>Sent</a>
+			<a href="/inbox/compose" class="compose_link">Compose</a>
+		</div>
+		<div class="inbox_list">
+			{% if messages.is_empty() %}
+			<p>No messages.</p>
+			{% else %}
+			{% for msg in messages %}
+			<article class="inbox_message {% if msg.new %}unread{% endif %}">
+				<p class="inbox_header">
+					<span class="inbox_subject">{{ msg.subject }}</span>
+					<span class="inbox_meta">from u/{{ msg.author }} · {{ msg.created }}</span>
+				</p>
+				<p class="inbox_preview">{{ msg.body_preview }}</p>
+				<a href="https://www.reddit.com/message/messages/{{ msg.id }}" rel="nofollow" class="inbox_link">View on Reddit</a>
+			</article>
+			{% endfor %}
+			{% endif %}
+		</div>
+		{% if !after.is_empty() %}
+		<footer>
+			<a href="/inbox?tab={{ tab }}&after={{ after }}" accesskey="N">NEXT</a>
+		</footer>
+		{% endif %}
+	</div>
+</main>
+{% endblock %}

@@ -35,7 +35,10 @@
 		{% if prefs.layout != "" %}{{ prefs.layout }}{% endif %}
 		{% if prefs.wide == "on" %} wide{% endif %}
 		{% if prefs.theme != "system" %} {{ prefs.theme }}{% endif %}
-		{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}">
+		{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}
+		{% if prefs.font_size == "small" %} font_small{% endif %}
+		{% if prefs.font_size == "large" %} font_large{% endif %}
+		{% block body_extra_class %}{% endblock %}">
 		<!-- NAVIGATION BAR -->
 		<nav class="
 			{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}">
@@ -56,6 +59,7 @@
 					{% call utils::visit_reddit_confirmation(url) %}
 				{% endif %}
 				{% if prefs.logged_in %}
+					<a id="inbox_link" href="/inbox" title="Inbox">inbox</a>
 					<span id="logged_in_user" title="Logged in as {{ prefs.username }}">u/{{ prefs.username }}</span>
 					<form id="logout_form" method="POST" action="/logout">
 						<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
@@ -94,5 +98,13 @@
 				</div>
 			</footer>
 		{% endblock %}
+		{% if prefs.enable_offline == "on" %}
+		<script>
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+		}
+		</script>
+		{% endif %}
+		{% block scripts %}{% endblock %}
 	</body>
 </html>

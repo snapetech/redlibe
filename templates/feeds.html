@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Custom feeds — Redlib{% endblock %}
+
+{% block content %}
+<div id="feeds_page">
+	<h1>Custom feeds</h1>
+	<p class="feeds_intro">Create named feeds that combine subreddits (e.g. <strong>Tech</strong> = rust + programming + linux). They appear in the Feeds menu and you can open them with <code>/feed/Name</code>.</p>
+
+	{% if error != "" %}
+	<div class="feeds_error" role="alert">{{ error }}</div>
+	{% endif %}
+
+	<section class="feeds_list_section">
+		<h2>Your feeds</h2>
+		{% if feeds.len() == 0 %}
+		<p class="feeds_empty">No custom feeds yet. Create one below.</p>
+		{% else %}
+		<ul class="feeds_list">
+			{% for f in feeds %}
+			<li class="feed_item">
+				<a href="{{ f.link }}">{{ f.feed.name }}</a>
+				<span class="feed_subs">{{ f.feed.subreddits }}</span>
+				<form method="POST" action="/feeds" class="feed_delete_form">
+					<input type="hidden" name="action" value="delete">
+					<input type="hidden" name="name" value="{{ f.feed.name }}">
+					<button type="submit" class="feed_delete_btn" title="Delete this feed">Delete</button>
+				</form>
+			</li>
+			{% endfor %}
+		</ul>
+		{% endif %}
+	</section>
+
+	<section class="feeds_create_section">
+		<h2>Create or edit a feed</h2>
+		<form method="POST" action="/feeds" class="feeds_form">
+			<input type="hidden" name="action" value="save">
+			<div class="form_row">
+				<label for="feed_name">Name</label>
+				<input type="text" id="feed_name" name="name" placeholder="e.g. Tech" maxlength="50" required>
+			</div>
+			<div class="form_row">
+				<label for="feed_subs">Subreddits (comma or space separated)</label>
+				<textarea id="feed_subs" name="subreddits" rows="3" placeholder="rust, programming, linux"></textarea>
+			</div>
+			<button type="submit" class="submit">Save feed</button>
+		</form>
+		<p class="form_hint">If a feed with the same name already exists, it will be updated. Subreddit names are case-insensitive.</p>
+	</section>
+</div>
+{% endblock %}

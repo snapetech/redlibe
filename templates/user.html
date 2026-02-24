@@ -8,8 +8,13 @@ body %}
     <div id="column_one">
         <form id="sort">
             <div id="listing_options">
+                {% if prefs.logged_in && prefs.username == user.name %}
+                {% call utils::sort(["/user/", user.name.as_str()].concat(),
+                ["overview", "comments", "submitted", "saved", "upvoted", "hidden"], listing) %}
+                {% else %}
                 {% call utils::sort(["/user/", user.name.as_str()].concat(),
                 ["overview", "comments", "submitted"], listing) %}
+                {% endif %}
             </div>
             <select id="sort_select" name="sort">
                 {% call utils::options(sort.0, ["hot", "new", "top",

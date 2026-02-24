@@ -27,7 +27,7 @@ struct DuplicatesTemplate {
 	/// params contains the relevant request parameters.
 	params: DuplicatesParams,
 
-	/// post is the post whose ID is specified in the reqeust URL. Note that
+	/// post is the post whose ID is specified in the request URL. Note that
 	/// this is not necessarily the "original" post.
 	post: Post,
 

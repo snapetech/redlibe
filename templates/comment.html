@@ -14,7 +14,7 @@
     </p>
         <div class="line"></div>
 	</div>
-	<details class="comment_right" {% if !collapsed || highlighted %}open{% endif %}>
+	<details class="comment_right" data-comment-id="t1_{{ id }}" {% if !collapsed || highlighted %}open{% endif %}>
 		<summary class="comment_data">
 			{% if author.name != "[deleted]" %}
 				<a class="comment_author {{ author.distinguished }} {% if author.name == post_author %}op{% endif %}" href="/user/{{ author.name }}">u/{{ author.name }}</a>
@@ -39,6 +39,43 @@
 		<div class="comment_body_filtered {% if highlighted %}highlighted{% endif %}">(Filtered content)</div>
 		{% else %}
 		<div class="comment_body {% if highlighted %}highlighted{% endif %}">{{ body|safe }}</div>
+		{% endif %}
+		{% if prefs.logged_in %}
+		<div class="comment_actions">
+			<button type="button" class="reply_btn" data-parent-fullname="t1_{{ id }}" data-return-to="{{ post_link }}{{ id }}/">Reply</button>
+			{% if author.name != "[deleted]" && author.name == prefs.username %}
+			<form method="POST" action="/edit" class="inline_form edit_delete_form">
+				<input type="hidden" name="thing_id" value="t1_{{ id }}">
+				<input type="hidden" name="action" value="delete">
+				<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+				<input type="hidden" name="return_to" value="{{ post_link }}{{ id }}/">
+				<button type="submit" class="delete_btn" title="Delete comment">delete</button>
+			</form>
+			<details class="edit_comment_details">
+				<summary>edit</summary>
+				<form method="POST" action="/edit" class="edit_form">
+					<input type="hidden" name="thing_id" value="t1_{{ id }}">
+					<input type="hidden" name="action" value="edit">
+					<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+					<input type="hidden" name="return_to" value="{{ post_link }}{{ id }}/">
+					<textarea name="text" rows="6" required>{{ body|e }}</textarea>
+					<button type="submit" class="submit">Save</button>
+				</form>
+			</details>
+			{% endif %}
+		</div>
+		<div class="reply_form_wrapper" id="reply-{{ id }}" hidden>
+			<form class="reply_form" method="POST" action="/comment">
+				<input type="hidden" name="parent" value="t1_{{ id }}">
+				<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+				<input type="hidden" name="return_to" value="{{ post_link }}{{ id }}/">
+				<textarea name="text" rows="4" placeholder="Write your reply..." required maxlength="10000"></textarea>
+				<div class="reply_form_actions">
+					<button type="submit" class="submit">Post reply</button>
+					<button type="button" class="reply_cancel_btn">Cancel</button>
+				</div>
+			</form>
+		</div>
 		{% endif %}
 		<blockquote class="replies">{% for c in replies -%}{{ c.render().unwrap()|safe }}{%- endfor %}
 		</blockquote>

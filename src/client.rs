@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16};
 use std::sync::LazyLock;
 use std::{io, result::Result};
 
-use crate::auth::AuthContext;
+use crate::auth::{refresh_access_token, AuthContext, SessionData};
 use crate::dbg_msg;
 use crate::oauth::{force_refresh_token, token_daemon, Oauth, OauthBackendImpl};
 use crate::server::RequestExt;
@@ -440,80 +440,92 @@ pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
 				None
 			};
 
-			// asynchronously aggregate the chunks of the body
-			match hyper::body::aggregate(response).await {
-				Ok(body) => {
-					let has_remaining = body.has_remaining();
+				// asynchronously aggregate the chunks of the body
+				match hyper::body::aggregate(response).await {
+					Ok(mut body) => {
+						let has_remaining = body.has_remaining();
 
-					if !has_remaining {
-						// Rate limited, so spawn a force_refresh_token()
-						tokio::spawn(force_refresh_token());
-						return match reset {
-							Some(val) => Err(format!(
-								"Reddit rate limit exceeded. Try refreshing in a few seconds.\
-								 Rate limit will reset in: {val}"
-							)),
-							None => Err("Reddit rate limit exceeded".to_string()),
-						};
-					}
+						if !has_remaining {
+							// Rate limited, so spawn a force_refresh_token()
+							tokio::spawn(force_refresh_token());
+							return match reset {
+								Some(val) => Err(format!(
+									"Reddit rate limit exceeded. Try refreshing in a few seconds.\
+									 Rate limit will reset in: {val}"
+								)),
+								None => Err("Reddit rate limit exceeded".to_string()),
+							};
+						}
 
-					// Parse the response from Reddit as JSON
-					match serde_json::from_reader(body.reader()) {
-						Ok(value) => {
-							let json: Value = value;
+						// Copy to bytes so we can inspect on parse failure
+						let bytes = body.copy_to_bytes(body.remaining());
 
-							// If user is suspended
-							if let Some(data) = json.get("data") {
-								if let Some(is_suspended) = data.get("is_suspended").and_then(Value::as_bool) {
-									if is_suspended {
-										return Err("suspended".into());
+						// Parse the response from Reddit as JSON
+						match serde_json::from_slice::<Value>(&bytes) {
+							Ok(json) => {
+								// If user is suspended
+								if let Some(data) = json.get("data") {
+									if let Some(is_suspended) = data.get("is_suspended").and_then(Value::as_bool) {
+										if is_suspended {
+											return Err("suspended".into());
+										}
 									}
 								}
+
+								// If Reddit returned an error
+								if json["error"].is_i64() {
+									// OAuth token has expired; http status 401
+									if json["message"] == "Unauthorized" {
+										error!("Forcing a token refresh");
+										let () = force_refresh_token().await;
+										return Err("OAuth token has expired. Please refresh the page!".to_string());
+									}
+
+									// Handle quarantined
+									if json["reason"] == "quarantined" {
+										return Err("quarantined".into());
+									}
+									// Handle gated
+									if json["reason"] == "gated" {
+										return Err("gated".into());
+									}
+									// Handle private subs
+									if json["reason"] == "private" {
+										return Err("private".into());
+									}
+									// Handle banned subs
+									if json["reason"] == "banned" {
+										return Err("banned".into());
+									}
+
+									Err(format!("Reddit error {} \"{}\": {} | {path}", json["error"], json["reason"], json["message"]))
+								} else {
+									Ok(json)
+								}
 							}
-
-							// If Reddit returned an error
-							if json["error"].is_i64() {
-								// OAuth token has expired; http status 401
-								if json["message"] == "Unauthorized" {
-									error!("Forcing a token refresh");
-									let () = force_refresh_token().await;
-									return Err("OAuth token has expired. Please refresh the page!".to_string());
+							Err(e) => {
+								error!("Got an invalid response from reddit {e}. Status code: {status}");
+								if status.is_server_error() {
+									return Err("Reddit is having issues, check if there's an outage".to_string());
 								}
-
-								// Handle quarantined
-								if json["reason"] == "quarantined" {
-									return Err("quarantined".into());
-								}
-								// Handle gated
-								if json["reason"] == "gated" {
-									return Err("gated".into());
-								}
-								// Handle private subs
-								if json["reason"] == "private" {
-									return Err("private".into());
-								}
-								// Handle banned subs
-								if json["reason"] == "banned" {
-									return Err("banned".into());
-								}
-
-								Err(format!("Reddit error {} \"{}\": {} | {path}", json["error"], json["reason"], json["message"]))
-							} else {
-								Ok(json)
-							}
-						}
-						Err(e) => {
-							error!("Got an invalid response from reddit {e}. Status code: {status}");
-							if status.is_server_error() {
-								Err("Reddit is having issues, check if there's an outage".to_string())
-							} else {
-								err("Failed to parse page JSON data", e.to_string(), path)
+								// Provide a clearer message when Reddit returns HTML or empty body
+								let hint = if bytes.is_empty() {
+									format!("Reddit returned an empty response (HTTP {status}).")
+								} else if bytes.first().copied() == Some(b'<') {
+									format!(
+										"Reddit returned an HTML page instead of JSON (HTTP {status}). \
+										The instance may be blocked, rate limited, or the anonymous OAuth flow may be failing. \
+										See https://github.com/redlib-org/redlib/issues/446"
+									)
+								} else {
+									format!("{e} | {path}")
+								};
+								err("Failed to parse page JSON data", hint, path)
 							}
 						}
 					}
+					Err(e) => err("Failed receiving body from Reddit", e.to_string(), path),
 				}
-				Err(e) => err("Failed receiving body from Reddit", e.to_string(), path),
-			}
 		}
 		Err(e) => err("Couldn't send request to Reddit", e, path),
 	}
@@ -527,12 +539,55 @@ pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
 ///
 /// Unlike `json()`, this function is **not cached** — authenticated responses
 /// are user-specific and must not be shared across sessions.
-pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> Result<Value, String> {
+///
+/// On 401 Unauthorized with a `UserSession` that has a non-empty `refresh_token`,
+/// automatically refreshes the access token, retries the request once, and returns
+/// the new session in the second element so the caller can call `update_session_cookie`.
+pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> Result<(Value, Option<SessionData>), String> {
 	let bearer = match auth.bearer_token() {
 		Some(t) => t.to_string(),
-		None => return json(path, quarantine).await,
+		None => {
+			let json = json(path, quarantine).await?;
+			return Ok((json, None));
+		}
 	};
 
+	let (json, _updated) = authed_json_with_bearer(path.clone(), quarantine, &bearer).await?;
+	if json["error"].is_i64() && json["message"].as_str() == Some("Unauthorized") {
+		// Try refresh for user sessions with a refresh token
+		if let Some(s) = auth.session_data() {
+			if !s.refresh_token.is_empty() {
+				let (new_token, expires_at) = refresh_access_token(&s.refresh_token).await?;
+				let new_session = SessionData {
+					access_token: new_token,
+					refresh_token: s.refresh_token.clone(),
+					username: s.username.clone(),
+					expires_at,
+					csrf_token: s.csrf_token.clone(),
+				};
+				let (retry_json, _) = authed_json_with_bearer(path, quarantine, &new_session.access_token).await?;
+				if retry_json["error"].is_i64() {
+					return Err(format!(
+						"Reddit API error {}: {} | {}",
+						retry_json["error"], retry_json["reason"], retry_json["message"]
+					));
+				}
+				return Ok((retry_json, Some(new_session)));
+			}
+		}
+		return Err("OAuth token is unauthorized — session may have expired".to_string());
+	}
+	if json["error"].is_i64() {
+		return Err(format!(
+			"Reddit API error {}: {} | {}",
+			json["error"], json["reason"], json["message"]
+		));
+	}
+	Ok((json, None))
+}
+
+/// Inner helper: one GET with a given bearer token. Returns raw JSON (may contain error fields).
+async fn authed_json_with_bearer(path: String, quarantine: bool, bearer: &str) -> Result<(Value, Option<SessionData>), String> {
 	let url = format!("{REDDIT_URL_BASE}{path}");
 	let request = Request::builder()
 		.method(Method::GET)
@@ -554,13 +609,11 @@ pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> 
 
 	let client: &LazyLock<Client<_, Body>> = &CLIENT;
 	let response = client.request(request).await.map_err(|e| e.to_string())?;
-
 	let status = response.status();
 
-	// Collect body (decompress if needed)
 	let body_bytes: Vec<u8> = match response.headers().get(header::CONTENT_ENCODING).and_then(|v| v.to_str().ok()) {
 		Some("gzip") => {
-			let mut aggregated = match body::aggregate(response).await {
+			let aggregated = match body::aggregate(response).await {
 				Ok(b) => b,
 				Err(e) => return Err(e.to_string()),
 			};
@@ -585,25 +638,85 @@ pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> 
 	}
 
 	let json: Value = serde_json::from_slice(&body_bytes).map_err(|e| format!("Failed to parse authed JSON: {e} | status={status}"))?;
+	Ok((json, None))
+}
 
+/// Fetch the list of subreddit display names the user is subscribed to.
+/// Uses the given bearer token (e.g. from OAuth callback). Used to populate Feeds nav when logged in.
+pub async fn fetch_subscribed_subreddits_with_bearer(bearer: &str) -> Result<Vec<String>, String> {
+	let path = "/subreddits/mine/subscriber.json?limit=100&raw_json=1".to_string();
+	let (json, _) = authed_json_with_bearer(path, false, bearer).await?;
 	if json["error"].is_i64() {
-		if json["message"] == "Unauthorized" {
-			return Err("OAuth token is unauthorized — session may have expired".to_string());
-		}
 		return Err(format!(
 			"Reddit API error {}: {} | {}",
 			json["error"], json["reason"], json["message"]
 		));
 	}
+	let children = json["data"]["children"].as_array().ok_or("Invalid mine/subscriber response")?;
+	let names: Vec<String> = children
+		.iter()
+		.filter_map(|c| c["data"]["display_name"].as_str().map(String::from))
+		.collect();
+	Ok(names)
+}
 
-	Ok(json)
+/// Fetch the current user's subscribed subreddits (using AuthContext). Use when logged in to refresh the list.
+pub async fn fetch_subscribed_subreddits(auth: &AuthContext) -> Result<Vec<String>, String> {
+	let path = "/subreddits/mine/subscriber.json?limit=100&raw_json=1".to_string();
+	let (json, _) = authed_json(path, false, auth).await?;
+	let children = json["data"]["children"].as_array().ok_or("Invalid mine/subscriber response")?;
+	let names: Vec<String> = children
+		.iter()
+		.filter_map(|c| c["data"]["display_name"].as_str().map(String::from))
+		.collect();
+	Ok(names)
 }
 
 /// Make an authenticated POST request to a Reddit API endpoint.
 /// Used for actions like voting, subscribing, saving.
-pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> Result<Value, String> {
+///
+/// On 401 Unauthorized with a `UserSession` that has a non-empty `refresh_token`,
+/// refreshes the access token, retries once, and returns the new session so the
+/// caller can call `update_session_cookie`.
+pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> Result<(Value, Option<SessionData>), String> {
 	let bearer = auth.bearer_token().ok_or("Authenticated POST requires a logged-in session")?;
 
+	let (value, updated) = authed_post_with_bearer(path.clone(), body_str.clone(), bearer).await?;
+	if value.get("error").and_then(|e| e.as_i64()).is_some()
+		&& value.get("message").and_then(|m| m.as_str()) == Some("Unauthorized")
+	{
+		if let Some(s) = auth.session_data() {
+			if !s.refresh_token.is_empty() {
+				let (new_token, expires_at) = refresh_access_token(&s.refresh_token).await?;
+				let new_session = SessionData {
+					access_token: new_token,
+					refresh_token: s.refresh_token.clone(),
+					username: s.username.clone(),
+					expires_at,
+					csrf_token: s.csrf_token.clone(),
+				};
+				let (retry_value, _) = authed_post_with_bearer(path, body_str, &new_session.access_token).await?;
+				if retry_value.get("error").and_then(|e| e.as_i64()).is_some() {
+					return Err(format!(
+						"Reddit API error {}: {} | {}",
+						retry_value["error"], retry_value["reason"], retry_value["message"]
+					));
+				}
+				return Ok((retry_value, Some(new_session)));
+			}
+		}
+		return Err("OAuth token is unauthorized — session may have expired".to_string());
+	}
+	if value.get("error").and_then(|e| e.as_i64()).is_some() {
+		return Err(format!(
+			"Reddit API error {}: {} | {}",
+			value["error"], value["reason"], value["message"]
+		));
+	}
+	Ok((value, updated))
+}
+
+async fn authed_post_with_bearer(path: String, body_str: String, bearer: &str) -> Result<(Value, Option<SessionData>), String> {
 	let url = format!("{REDDIT_URL_BASE}{path}");
 	let request = Request::builder()
 		.method(Method::POST)
@@ -621,20 +734,11 @@ pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> 
 	let bytes = body::to_bytes(response.into_body()).await.map_err(|e| e.to_string())?;
 
 	if bytes.is_empty() || &bytes[..] == b"{}" {
-		// Reddit returns `{}` for many successful action endpoints
-		return Ok(Value::Object(Default::default()));
+		return Ok((Value::Object(Default::default()), None));
 	}
 
 	let json: Value = serde_json::from_slice(&bytes).map_err(|e| format!("Failed to parse POST response: {e} | status={status}"))?;
-
-	if json["error"].is_i64() {
-		return Err(format!(
-			"Reddit API error {}: {} | {}",
-			json["error"], json["reason"], json["message"]
-		));
-	}
-
-	Ok(json)
+	Ok((json, None))
 }
 
 async fn self_check(sub: &str) -> Result<(), String> {

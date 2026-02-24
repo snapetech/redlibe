@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Submit to r/{{ sub }} - Redlib{% endblock %}
+{% block search %}{% call utils::search(["/r/", sub.as_str()].concat(), "") %}{% endblock %}
+{% block subscriptions %}{% call utils::sub_list(sub.as_str()) %}{% endblock %}
+
+{% block body %}
+<main>
+	<div id="column_one">
+		<h1>Submit to r/{{ sub }}</h1>
+		{% if !error.is_empty() %}
+		<p class="error">{{ error }}</p>
+		{% endif %}
+		<form action="/r/{{ sub }}/submit" method="POST" id="submit_form">
+			<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+			<input type="hidden" name="return_to" value="/r/{{ sub }}">
+			<label for="kind">Type</label>
+			<select name="kind" id="kind">
+				<option value="self">Text</option>
+				<option value="link">Link</option>
+			</select>
+			<label for="title">Title</label>
+			<input type="text" name="title" id="title" required maxlength="300" placeholder="Post title">
+			<div id="url_field" style="display: none;">
+				<label for="url">URL</label>
+				<input type="url" name="url" id="url" placeholder="https://">
+			</div>
+			<div id="text_field">
+				<label for="text">Text (optional for link)</label>
+				<textarea name="text" id="text" rows="12" placeholder="Post body (markdown supported)"></textarea>
+			</div>
+			<button type="submit" class="submit">Submit</button>
+		</form>
+	</div>
+</main>
+<script>
+(function() {
+	var kind = document.getElementById('kind');
+	var urlField = document.getElementById('url_field');
+	var textField = document.getElementById('text_field');
+	var urlInput = document.getElementById('url');
+	var textInput = document.getElementById('text');
+	function toggle() {
+		if (kind.value === 'link') {
+			urlField.style.display = 'block';
+			urlInput.required = true;
+			textInput.required = false;
+		} else {
+			urlField.style.display = 'none';
+			urlInput.required = false;
+		}
+	}
+	kind.addEventListener('change', toggle);
+	toggle();
+})();
+</script>
+{% endblock %}

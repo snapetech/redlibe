@@ -25,15 +25,17 @@ RUN echo "finished building redlib!"
 ########################
 FROM ubuntu:${UBUNTU_RELEASE_VERSION} AS release
 
-# Install ca-certificates
-RUN apt-get update && apt-get install -y ca-certificates
+# Install ca-certificates, openssh-client (SSH key auth), sshpass (SSH password auth for login)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client sshpass \
+	&& rm -rf /var/lib/apt/lists/*
 
 # Import redlib binary from builder
 COPY --from=builder /redlib/target/release/redlib /usr/local/bin/redlib
 
-# Add non-root user for running redlib
+# Add non-root user with home dir so SSH can create ~/.ssh and known_hosts for session import
 RUN useradd \
-    --no-create-home \
+    --create-home \
+    --home-dir /home/redlib \
     --password "!" \
     --comment "user for running redlib" \
     redlib

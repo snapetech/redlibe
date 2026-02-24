@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use hyper::{Body, Request, Response};
 use serde_json::{json, Value};
 
-use crate::auth::AuthContext;
+use crate::auth::{update_session_cookie, AuthContext};
 use crate::client::{authed_json, authed_post, json as anon_json};
 use crate::server::RequestExt;
 use url;
@@ -83,13 +83,16 @@ pub async fn subreddit_listing(req: Request<Body>) -> Result<Response<Body>, Str
 	};
 	let path = format!("/r/{sub}/hot.json{qs}");
 
-	let data = match auth.bearer_token() {
-		Some(_) => authed_json(path, false, &auth).await,
-		None => anon_json(path, false).await,
-	}
-	.map_err(|e| e)?;
+	let (data, session_updated) = match auth.bearer_token() {
+		Some(_) => authed_json(path, false, &auth).await?,
+		None => (anon_json(path, false).await?, None),
+	};
 
-	json_response(200, data)
+	let mut res = json_response(200, data)?;
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }
 
 /// `GET /api/v1/r/:sub/comments/:id` — post + comments as JSON.
@@ -105,13 +108,16 @@ pub async fn post_comments(req: Request<Body>) -> Result<Response<Body>, String>
 	};
 	let path = format!("/r/{sub}/comments/{id}.json{qs}");
 
-	let data = match auth.bearer_token() {
-		Some(_) => authed_json(path, false, &auth).await,
-		None => anon_json(path, false).await,
-	}
-	.map_err(|e| e)?;
+	let (data, session_updated) = match auth.bearer_token() {
+		Some(_) => authed_json(path, false, &auth).await?,
+		None => (anon_json(path, false).await?, None),
+	};
 
-	json_response(200, data)
+	let mut res = json_response(200, data)?;
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }
 
 /// `GET /api/v1/me` — return the authenticated user's Reddit profile.
@@ -124,11 +130,13 @@ pub async fn me(req: Request<Body>) -> Result<Response<Body>, String> {
 		return json_error(401, "Authentication required — provide Authorization: Bearer <token> header or log in via /login");
 	}
 
-	let data = authed_json("/api/v1/me.json?raw_json=1".to_string(), false, &auth)
-		.await
-		.map_err(|e| e)?;
+	let (data, session_updated) = authed_json("/api/v1/me.json?raw_json=1".to_string(), false, &auth).await?;
 
-	json_response(200, data)
+	let mut res = json_response(200, data)?;
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }
 
 /// `POST /api/v1/vote` — vote on a post or comment.
@@ -179,9 +187,11 @@ pub async fn api_vote(req: Request<Body>) -> Result<Response<Body>, String> {
 		dir,
 	);
 
-	authed_post("/api/vote".to_string(), body_str, &auth)
-		.await
-		.map_err(|e| e)?;
+	let (_, session_updated) = authed_post("/api/vote".to_string(), body_str, &auth).await?;
 
-	json_response(200, json!({ "ok": true }))
+	let mut res = json_response(200, json!({ "ok": true }))?;
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
 }

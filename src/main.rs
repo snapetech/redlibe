@@ -14,7 +14,7 @@ use log::{info, warn};
 use redlib::client::{canonical_path, proxy, rate_limit_check, CLIENT};
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
-use redlib::{api, auth, config, duplicates, headers, instance_info, post, search, settings, subreddit, user, vote};
+use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, subreddit, submit, user, vote};
 
 use redlib::client::OAUTH_CLIENT;
 
@@ -240,6 +240,7 @@ async fn main() {
 		)
 		.boxed()
 	});
+	app.at("/sw.js").get(|_| resource(include_str!("../static/sw.js"), "application/javascript", false).boxed());
 	app.at("/favicon.ico").get(|_| favicon().boxed());
 	app.at("/logo.png").get(|_| pwa_logo().boxed());
 	app.at("/Inter.var.woff2").get(|_| font().boxed());
@@ -298,20 +299,32 @@ async fn main() {
 	app.at("/settings").get(|r| settings::get(r).boxed()).post(|r| settings::set(r).boxed());
 	app.at("/settings/restore").get(|r| settings::restore(r).boxed());
 	app.at("/settings/encoded-restore").post(|r| settings::encoded_restore(r).boxed());
+	app.at("/settings/export-json").get(|r| settings::export_json(r).boxed());
+	app.at("/settings/import-json").post(|r| settings::import_json(r).boxed());
 	app.at("/settings/update").get(|r| settings::update(r).boxed());
 
 	// --- redlib-extended: Auth, voting, REST API ---
 
 	// Auth: login page, Reddit OAuth flow, SSH browser import, logout
 	app.at("/login").get(|r| auth::login_page(r).boxed());
-	app.at("/login/reddit").post(|r| auth::login_reddit(r).boxed());
-	app.at("/login/ssh-import").post(|r| auth::login_ssh_import(r).boxed());
+	app.at("/login/reddit").get(|_| async { Ok(redirect("/login")) }.boxed()).post(|r| auth::login_reddit(r).boxed());
+	app.at("/login/ssh-import").get(|_| async { Ok(redirect("/login")) }.boxed()).post(|r| auth::login_ssh_import(r).boxed());
 	app.at("/auth/callback").get(|r| auth::oauth_callback(r).boxed());
 	app.at("/logout").post(|r| auth::logout(r).boxed());
 
-	// Voting and save/unsave
+	// Voting, save/unsave, comment reply
 	app.at("/vote").post(|r| vote::submit(r).boxed());
 	app.at("/save").post(|r| vote::save(r).boxed());
+	app.at("/comment").post(|r| comment::submit(r).boxed());
+	app.at("/edit").post(|r| edit::submit(r).boxed());
+
+	// Inbox and private messages
+	app.at("/inbox").get(|r| inbox::list(r).boxed());
+	app.at("/inbox/compose").get(|r| inbox::compose_get(r).boxed()).post(|r| inbox::compose_post(r).boxed());
+
+	// Custom feeds (internal named multireddits)
+	app.at("/feeds").get(|r| feeds::get(r).boxed()).post(|r| feeds::post(r).boxed());
+	app.at("/feed/:name").get(|r| feeds::redirect_to_feed(r).boxed());
 
 	// REST API
 	app.at("/api/v1/r/:sub").get(|r| api::subreddit_listing(r).boxed());
@@ -336,6 +349,11 @@ async fn main() {
 	app.at("/r/:sub/unsubscribe").post(|r| subreddit::subscriptions_filters(r).boxed());
 	app.at("/r/:sub/filter").post(|r| subreddit::subscriptions_filters(r).boxed());
 	app.at("/r/:sub/unfilter").post(|r| subreddit::subscriptions_filters(r).boxed());
+
+	app.at("/mark-read").post(|r| subreddit::mark_read(r).boxed());
+	app.at("/comment-collapse").post(|r| post::comment_collapse(r).boxed());
+
+	app.at("/r/:sub/submit").get(|r| submit::get(r).boxed()).post(|r| submit::post(r).boxed());
 
 	app.at("/r/:sub/comments/:id").get(|r| post::item(r).boxed());
 	app.at("/r/:sub/comments/:id/:title").get(|r| post::item(r).boxed());
@@ -377,8 +395,13 @@ async fn main() {
 	app.at("/wiki").get(|r| subreddit::wiki(r).boxed());
 	app.at("/wiki/*page").get(|r| subreddit::wiki(r).boxed());
 
-	// Search all of Reddit
+	// Search all of Reddit (more specific routes first)
+	app.at("/search/save").post(|r| search::save(r).boxed());
+	app.at("/search/unsave").post(|r| search::unsave(r).boxed());
 	app.at("/search").get(|r| search::find(r).boxed());
+
+	// Quick jump to subreddit
+	app.at("/go").get(|r| go::get_go(r).boxed());
 
 	// Handle about pages
 	app.at("/about").get(|req| error(req, "About pages aren't added yet").boxed());

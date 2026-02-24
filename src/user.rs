@@ -1,9 +1,10 @@
 #![allow(clippy::cmp_owned)]
 
 // CRATES
+use crate::auth::{update_session_cookie, AuthContext};
 use crate::client::json;
 use crate::server::RequestExt;
-use crate::utils::{error, filter_posts, format_url, get_filters, nsfw_landing, param, setting, template, Post, Preferences, User};
+use crate::utils::{error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, nsfw_landing, param, redirect, setting, template, Post, Preferences, User};
 use crate::{config, utils};
 use askama::Template;
 use chrono::DateTime;
@@ -34,42 +35,53 @@ struct UserTemplate {
 	no_posts: bool,
 }
 
+const ACCOUNT_LISTINGS: &[&str] = &["saved", "upvoted", "hidden"];
+
 // FUNCTIONS
 pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
-	let listing = req.param("listing").unwrap_or_else(|| "overview".to_string());
+	let auth = AuthContext::from_request(&req);
+	let mut username = req.param("name").unwrap_or_else(|| "reddit".to_string());
+	let resolved_me = username.eq_ignore_ascii_case("me");
+	if resolved_me {
+		username = auth.username().unwrap_or_default().to_string();
+		if username.is_empty() {
+			return Ok(redirect("/login"));
+		}
+		// Redirect to canonical URL so we never send "me" to Reddit
+		let listing = req.param("listing").unwrap_or_default();
+		let q = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+		let to = if listing.is_empty() {
+			format!("/user/{username}{q}")
+		} else {
+			format!("/user/{username}/{listing}{q}")
+		};
+		return Ok(redirect(&to));
+	}
 
-	// Build the Reddit JSON API path
+	let listing = req.param("listing").unwrap_or_else(|| "overview".to_string());
 	let path = format!(
 		"/user/{}/{listing}.json?{}&raw_json=1",
-		req.param("name").unwrap_or_else(|| "reddit".to_string()),
+		username,
 		req.uri().query().unwrap_or_default(),
 	);
 	let url = String::from(req.uri().path_and_query().map_or("", |val| val.as_str()));
 	let redirect_url = url[1..].replace('?', "%3F").replace('&', "%26");
-
-	// Retrieve other variables from Redlib request
 	let sort = param(&path, "sort").unwrap_or_default();
-	let username = req.param("name").unwrap_or_default();
 
-	// Retrieve info from user about page.
 	let user = user(&username).await.unwrap_or_default();
-
 	let req_url = req.uri().to_string();
-	// Return landing page if this post if this Reddit deems this user NSFW,
-	// but we have also disabled the display of NSFW content or if the instance
-	// is SFW-only.
 	if user.nsfw && crate::utils::should_be_nsfw_gated(&req, &req_url) {
 		return Ok(nsfw_landing(req, req_url).await.unwrap_or_default());
 	}
 
 	let filters = get_filters(&req);
 	if filters.contains(&["u_", &username].concat()) {
-		Ok(template(&UserTemplate {
+		return Ok(template(&UserTemplate {
 			user,
 			posts: Vec::new(),
-			sort: (sort, param(&path, "t").unwrap_or_default()),
+			sort: (sort.clone(), param(&path, "t").unwrap_or_default()),
 			ends: (param(&path, "after").unwrap_or_default(), String::new()),
-			listing,
+			listing: listing.clone(),
 			prefs: Preferences::new(&req),
 			url,
 			redirect_url,
@@ -77,33 +89,81 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 			all_posts_filtered: false,
 			all_posts_hidden_nsfw: false,
 			no_posts: false,
-		}))
-	} else {
-		// Request user posts/comments from Reddit
-		match Post::fetch(&path, false).await {
-			Ok((mut posts, after)) => {
-				let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
-				let no_posts = posts.is_empty();
-				let all_posts_hidden_nsfw = !no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
-				Ok(template(&UserTemplate {
-					user,
-					posts,
-					sort: (sort, param(&path, "t").unwrap_or_default()),
-					ends: (param(&path, "after").unwrap_or_default(), after),
-					listing,
-					prefs: Preferences::new(&req),
-					url,
-					redirect_url,
-					is_filtered: false,
-					all_posts_filtered,
-					all_posts_hidden_nsfw,
-					no_posts,
-				}))
-			}
-			// If there is an error show error page
-			Err(msg) => error(req, &msg).await,
-		}
+		}));
 	}
+
+	let use_authed = ACCOUNT_LISTINGS.contains(&listing.as_str());
+	if use_authed && !auth.is_authenticated() {
+		return Ok(redirect("/login"));
+	}
+
+	let (mut posts, after) = if use_authed {
+		let ((mut p, a), session_updated) = Post::fetch_authed(&path, false, &auth)
+			.await
+			.map_err(|msg| msg.to_string())?;
+		let (_, all_posts_filtered) = filter_posts(&mut p, &filters);
+		filter_posts_by_content(&mut p, &get_filter_keywords(&req), &get_filter_flairs(&req), &get_filter_domains(&req));
+		if setting(&req, "hide_read") == "on" {
+			let read_ids = get_read_ids(&req);
+			filter_read_posts(&mut p, &read_ids);
+		}
+		if setting(&req, "show_only_media") == "on" {
+			filter_media_only(&mut p);
+		}
+		let no_posts = p.is_empty();
+		let all_posts_hidden_nsfw =
+			!no_posts && (p.iter().all(|x| x.flags.nsfw) && setting(&req, "show_nsfw") != "on");
+		let mut res = template(&UserTemplate {
+			user,
+			posts: p,
+			sort: (sort, param(&path, "t").unwrap_or_default()),
+			ends: (param(&path, "after").unwrap_or_default(), a),
+			listing,
+			prefs: Preferences::new(&req),
+			url,
+			redirect_url,
+			is_filtered: false,
+			all_posts_filtered,
+			all_posts_hidden_nsfw,
+			no_posts,
+		});
+		if let Some(s) = session_updated {
+			update_session_cookie(&mut res, &s);
+		}
+		return Ok(res);
+	} else {
+		match Post::fetch(&path, false).await {
+			Ok((p, a)) => (p, a),
+			Err(msg) => return error(req, &msg).await,
+		}
+	};
+
+	let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
+	filter_posts_by_content(&mut posts, &get_filter_keywords(&req), &get_filter_flairs(&req), &get_filter_domains(&req));
+	if setting(&req, "hide_read") == "on" {
+		let read_ids = get_read_ids(&req);
+		filter_read_posts(&mut posts, &read_ids);
+	}
+	if setting(&req, "show_only_media") == "on" {
+		filter_media_only(&mut posts);
+	}
+	let no_posts = posts.is_empty();
+	let all_posts_hidden_nsfw =
+		!no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
+	Ok(template(&UserTemplate {
+		user,
+		posts,
+		sort: (sort, param(&path, "t").unwrap_or_default()),
+		ends: (param(&path, "after").unwrap_or_default(), after),
+		listing,
+		prefs: Preferences::new(&req),
+		url,
+		redirect_url,
+		is_filtered: false,
+		all_posts_filtered,
+		all_posts_hidden_nsfw,
+		no_posts,
+	}))
 }
 
 // USER

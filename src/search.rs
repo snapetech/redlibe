@@ -1,18 +1,29 @@
 #![allow(clippy::cmp_owned)]
 
 // CRATES
-use crate::utils::{self, catch_random, error, filter_posts, format_num, format_url, get_filters, param, redirect, setting, template, val, Post, Preferences};
+use crate::utils::{self, catch_random, error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_num, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, get_recent_searches, get_saved_searches, param, redirect, recent_searches_cookie_value, saved_searches_cookie_value_after_save, saved_searches_cookie_value_after_unsave, setting, template, val, Post, Preferences, SavedSearch};
 use crate::{
 	client::json,
-	server::RequestExt,
+	server::{RequestExt, ResponseExt},
 	subreddit::{can_access_quarantine, quarantine},
 };
 use askama::Template;
+use cookie::Cookie;
 use hyper::{Body, Request, Response};
+use percent_encoding::utf8_percent_encode;
+use percent_encoding::NON_ALPHANUMERIC;
+use time::{Duration, OffsetDateTime};
 use regex::Regex;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 // STRUCTS
+#[derive(Clone)]
+pub struct RecentSearch {
+	pub query: String,
+	pub url: String,
+}
+
 struct SearchParams {
 	q: String,
 	sort: String,
@@ -49,6 +60,8 @@ struct SearchTemplate {
 	/// Whether all posts were hidden because they are NSFW (and user has disabled show NSFW)
 	all_posts_hidden_nsfw: bool,
 	no_posts: bool,
+	recent_searches: Vec<RecentSearch>,
+	saved_searches: Vec<SavedSearch>,
 }
 
 /// Regex matched against search queries to determine if they are reddit urls.
@@ -94,6 +107,13 @@ pub async fn find(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let sort = param(&path, "sort").unwrap_or_else(|| "relevance".to_string());
 	let filters = get_filters(&req);
+	let recent_searches: Vec<RecentSearch> = get_recent_searches(&req)
+		.into_iter()
+		.map(|q| {
+			let url = format!("/search?q={}", utf8_percent_encode(&q, NON_ALPHANUMERIC));
+			RecentSearch { query: q, url }
+		})
+		.collect();
 
 	// If search is not restricted to this subreddit, show other subreddits in search results
 	let subreddits = if param(&path, "restrict_sr").is_none() {
@@ -105,6 +125,8 @@ pub async fn find(req: Request<Body>) -> Result<Response<Body>, String> {
 	};
 
 	let url = String::from(req.uri().path_and_query().map_or("", |val| val.as_str()));
+
+	let saved_searches = get_saved_searches(&req);
 
 	// If all requested subs are filtered, we don't need to fetch posts.
 	if sub.split('+').all(|s| filters.contains(s)) {
@@ -127,14 +149,24 @@ pub async fn find(req: Request<Body>) -> Result<Response<Body>, String> {
 			all_posts_filtered: false,
 			all_posts_hidden_nsfw: false,
 			no_posts: false,
+			recent_searches: recent_searches.clone(),
+			saved_searches: saved_searches.clone(),
 		}))
 	} else {
 		match Post::fetch(&path, quarantined).await {
 			Ok((mut posts, after)) => {
 				let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
+				filter_posts_by_content(&mut posts, &get_filter_keywords(&req), &get_filter_flairs(&req), &get_filter_domains(&req));
+				if setting(&req, "hide_read") == "on" {
+					let read_ids = get_read_ids(&req);
+					filter_read_posts(&mut posts, &read_ids);
+				}
+				if setting(&req, "show_only_media") == "on" {
+					filter_media_only(&mut posts);
+				}
 				let no_posts = posts.is_empty();
 				let all_posts_hidden_nsfw = !no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
-				Ok(template(&SearchTemplate {
+				let mut res = template(&SearchTemplate {
 					posts,
 					subreddits,
 					sub,
@@ -153,7 +185,22 @@ pub async fn find(req: Request<Body>) -> Result<Response<Body>, String> {
 					all_posts_filtered,
 					all_posts_hidden_nsfw,
 					no_posts,
-				}))
+					recent_searches: recent_searches.clone(),
+					saved_searches: saved_searches.clone(),
+				});
+				if !query.is_empty() {
+					let val = recent_searches_cookie_value(&req, &query);
+					if !val.is_empty() {
+						res.insert_cookie(
+							Cookie::build(("recent_searches", val))
+								.path("/")
+								.http_only(true)
+								.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+								.into(),
+						);
+					}
+				}
+				Ok(res)
 			}
 			Err(msg) => {
 				if msg == "quarantined" || msg == "gated" {
@@ -191,4 +238,57 @@ async fn search_subreddits(q: &str, typed: &str) -> Vec<Subreddit> {
 			}
 		})
 		.collect::<Vec<Subreddit>>()
+}
+
+/// POST /search/save — add current search to saved list (body: q=... & name=optional).
+pub async fn save(req: Request<Body>) -> Result<Response<Body>, String> {
+	let (parts, body) = req.into_parts();
+	let body_bytes = hyper::body::to_bytes(body).await.map_err(|e| e.to_string())?;
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
+		.map(|(k, v)| (k.into_owned(), v.into_owned()))
+		.collect();
+	let q = form.get("q").cloned().unwrap_or_default();
+	let name = form.get("name").cloned().unwrap_or_default();
+	let req2 = Request::from_parts(parts, Body::empty());
+	let cookie_val = saved_searches_cookie_value_after_save(&req2, &name, &q);
+	let redirect_url = if q.is_empty() {
+		"/search".to_string()
+	} else {
+		format!("/search?q={}", utf8_percent_encode(&q, NON_ALPHANUMERIC))
+	};
+	let mut res = redirect(&redirect_url);
+	res.insert_cookie(
+		Cookie::build(("saved_searches", cookie_val))
+			.path("/")
+			.http_only(true)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+			.into(),
+	);
+	Ok(res)
+}
+
+/// POST /search/unsave — remove a search by query (body: q=...).
+pub async fn unsave(req: Request<Body>) -> Result<Response<Body>, String> {
+	let (parts, body) = req.into_parts();
+	let body_bytes = hyper::body::to_bytes(body).await.map_err(|e| e.to_string())?;
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
+		.map(|(k, v)| (k.into_owned(), v.into_owned()))
+		.collect();
+	let q = form.get("q").cloned().unwrap_or_default();
+	let req2 = Request::from_parts(parts, Body::empty());
+	let cookie_val = saved_searches_cookie_value_after_unsave(&req2, &q);
+	let redirect_url = if q.is_empty() {
+		"/search".to_string()
+	} else {
+		format!("/search?q={}", utf8_percent_encode(&q, NON_ALPHANUMERIC))
+	};
+	let mut res = redirect(&redirect_url);
+	res.insert_cookie(
+		Cookie::build(("saved_searches", cookie_val))
+			.path("/")
+			.http_only(true)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
+			.into(),
+	);
+	Ok(res)
 }

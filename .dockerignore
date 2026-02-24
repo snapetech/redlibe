@@ -1,0 +1,17 @@
+# Build output (large; not needed in image)
+target/
+# Git and IDE
+.git
+.gitignore
+.cursor
+*.swp
+*~
+# Docs and local notes (not needed to build binary)
+ASSESSMENT.md
+*.md
+!README.md
+# Dev / test
+compose.dev.yaml
+.env
+.env.*
+*.local

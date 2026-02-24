@@ -339,6 +339,25 @@ impl Server {
 					// Remove double slashes and decode encoded slashes
 					let mut path = req.uri().path().replace("//", "/").replace("%2F", "/");
 
+					// Strip reverse-proxy path prefix (e.g. X-Forwarded-Prefix: /redlibe)
+					if let Some(prefix) = req.headers().get("x-forwarded-prefix").and_then(|v| v.to_str().ok()) {
+						let prefix = prefix.trim().trim_end_matches('/');
+						if !prefix.is_empty() {
+							let with_slash = format!("/{prefix}");
+							if path == with_slash || path.starts_with(&format!("{with_slash}/")) {
+								if let Some(stripped) = path.as_str().strip_prefix(&with_slash) {
+									path = if stripped.is_empty() {
+										"/".to_string()
+									} else if stripped.starts_with('/') {
+										stripped.to_string()
+									} else {
+										format!("/{stripped}")
+									};
+								}
+							}
+						}
+					}
+
 					// Remove trailing slashes
 					if path != "/" && path.ends_with('/') {
 						path.pop();
@@ -376,8 +395,23 @@ impl Server {
 							}
 							.boxed()
 						}
-						// If there was a routing error
-						Err(e) => new_boilerplate(def_headers, req_headers, 404, if is_head { Body::empty() } else { e.into() }).boxed(),
+						// No route matched: render our error page instead of raw router error
+						Err(_) => {
+							let req = req;
+							let def_headers = def_headers.clone();
+							let req_headers = req_headers.clone();
+							Box::pin(async move {
+								match crate::utils::error(req, "Page not found").await {
+									Ok(mut res) => {
+										res.headers_mut().extend(def_headers);
+										let _ = compress_response(&req_headers, &mut res).await;
+										Ok(res)
+									}
+									Err(s) => new_boilerplate(def_headers, req_headers, 500, Body::from(s)).await,
+								}
+							})
+							.boxed()
+						}
 					}
 				}))
 			}

@@ -6,7 +6,8 @@ use crate::config::{self, get_setting};
 //
 // CRATES
 //
-use crate::{client::json, server::RequestExt};
+use crate::client::{authed_json, json};
+use crate::server::RequestExt;
 use askama::Template;
 use cookie::Cookie;
 use hyper::{Body, Request, Response};
@@ -287,6 +288,8 @@ impl Media {
 #[derive(Serialize)]
 pub struct GalleryMedia {
 	pub url: String,
+	/// Smaller preview URL when low_data mode; empty if not available.
+	pub preview_url: String,
 	pub width: i64,
 	pub height: i64,
 	pub caption: String,
@@ -310,10 +313,17 @@ impl GalleryMedia {
 				} else {
 					image["u"].as_str().unwrap_or_default()
 				};
+				let preview_url = metadata[media_id]["p"]
+					.as_array()
+					.and_then(|p| p.first())
+					.and_then(|first| first["u"].as_str())
+					.map(|u| format_url(u))
+					.unwrap_or_default();
 
 				// Construct gallery items
 				Self {
 					url: format_url(url),
+					preview_url,
 					width: image["x"].as_i64().unwrap_or_default(),
 					height: image["y"].as_i64().unwrap_or_default(),
 					caption: item["caption"].as_str().unwrap_or_default().to_string(),
@@ -360,43 +370,25 @@ pub struct Post {
 }
 
 impl Post {
-	/// Fetch posts of a user or subreddit and return a vector of posts and the "after" value
-	pub async fn fetch(path: &str, quarantine: bool) -> Result<(Vec<Self>, String), String> {
-		// Send a request to the url
-		let res = match json(path.to_string(), quarantine).await {
-			// If success, receive JSON in response
-			Ok(response) => response,
-			// If the Reddit API returns an error, exit this function
-			Err(msg) => return Err(msg),
-		};
-
-		// Fetch the list of posts from the JSON response
+	/// Parse a Reddit listing JSON (data.children + data.after) into posts and after cursor.
+	pub async fn parse_listing(res: &Value) -> Result<(Vec<Self>, String), String> {
 		let Some(post_list) = res["data"]["children"].as_array() else {
 			return Err("No posts found".to_string());
 		};
-
 		let mut posts: Vec<Self> = Vec::new();
-
-		// For each post from posts list
 		for post in post_list {
 			let data = &post["data"];
-
 			let (rel_time, created) = time(data["created_utc"].as_f64().unwrap_or_default());
 			let created_ts = data["created_utc"].as_f64().unwrap_or_default().round() as u64;
 			let score = data["score"].as_i64().unwrap_or_default();
 			let ratio: f64 = data["upvote_ratio"].as_f64().unwrap_or(1.0) * 100.0;
 			let title = val(post, "title");
-
-			// Determine the type of media along with the media URL
 			let (post_type, media, gallery) = Media::parse(data).await;
 			let awards = Awards::parse(&data["all_awardings"]);
-
-			// selftext_html is set for text posts when browsing.
 			let mut body = rewrite_urls(&val(post, "selftext_html"));
 			if body.is_empty() {
 				body = rewrite_urls(&val(post, "body_html"));
 			}
-
 			posts.push(Self {
 				id: val(post, "id"),
 				title,
@@ -465,9 +457,31 @@ impl Post {
 				nsfw: post["data"]["over_18"].as_bool().unwrap_or_default(),
 				ws_url: val(post, "websocket_url"),
 				out_url: post["data"]["url_overridden_by_dest"].as_str().map(|a| a.to_string()),
+				user_vote: match post["data"]["likes"].as_bool() {
+					Some(true) => 1,
+					Some(false) => -1,
+					None => 0,
+				},
 			});
 		}
 		Ok((posts, res["data"]["after"].as_str().unwrap_or_default().to_string()))
+	}
+
+	/// Fetch listing (anonymous).
+	pub async fn fetch(path: &str, quarantine: bool) -> Result<(Vec<Self>, String), String> {
+		let res = json(path.to_string(), quarantine).await?;
+		Self::parse_listing(&res).await
+	}
+
+	/// Fetch listing with auth (for saved/upvoted/hidden). Returns (posts, after) and optional session update.
+	pub async fn fetch_authed(
+		path: &str,
+		quarantine: bool,
+		auth: &AuthContext,
+	) -> Result<((Vec<Self>, String), Option<crate::auth::SessionData>), String> {
+		let (res, session_updated) = authed_json(path.to_string(), quarantine, auth).await?;
+		let (posts, after) = Self::parse_listing(&res).await?;
+		Ok(((posts, after), session_updated))
 	}
 }
 
@@ -613,6 +627,8 @@ pub struct Subreddit {
 	pub active: (String, String),
 	pub wiki: bool,
 	pub nsfw: bool,
+	/// Subreddit accent color from Reddit (e.g. #0079d3). Empty when not set.
+	pub key_color: String,
 }
 
 /// Parser for query params, used in sorting (eg. /r/rust/?sort=hot)
@@ -623,6 +639,23 @@ pub struct Params {
 	pub sort: Option<String>,
 	pub after: Option<String>,
 	pub before: Option<String>,
+}
+
+/// User-created custom feed: named multireddit (sub1+sub2+...).
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct CustomFeed {
+	pub name: String,
+	pub subreddits: String,
+	/// URL path for this feed (e.g. /feed/My%20Tech). Set when parsing from cookie; not stored in JSON.
+	#[serde(skip)]
+	pub link: String,
+}
+
+fn custom_feed_link(name: &str) -> String {
+	format!(
+		"/feed/{}",
+		percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC)
+	)
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -690,6 +723,39 @@ pub struct Preferences {
 	pub hide_score: String,
 	#[revision(start = 1)]
 	pub remove_default_feeds: String,
+	/// Custom feeds JSON (from cookie); revisioned as string. Use custom_feeds_parsed() for template.
+	#[revision(start = 1)]
+	pub custom_feeds: String,
+	/// Hide read posts in feed when "on".
+	#[revision(start = 1)]
+	pub hide_read: String,
+	/// Comma-separated keyword filters (hide posts whose title/body contains any).
+	#[revision(start = 1)]
+	pub filter_keywords: String,
+	/// Comma-separated flair filters (hide posts with these link flairs).
+	#[revision(start = 1)]
+	pub filter_flairs: String,
+	/// Comma-separated domain filters (hide posts from these domains).
+	#[revision(start = 1)]
+	pub filter_domains: String,
+	/// Font size: "default", "small", or "large".
+	#[revision(start = 1)]
+	pub font_size: String,
+	/// When "on", feed shows only posts with media (image, video, gif, gallery).
+	#[revision(start = 1)]
+	pub show_only_media: String,
+	/// When "on", register a Service Worker to cache static assets for offline use.
+	#[revision(start = 1)]
+	#[serde(default)]
+	pub enable_offline: String,
+	/// When "on", use subreddit key_color as accent on subreddit pages.
+	#[revision(start = 1)]
+	#[serde(default)]
+	pub use_subreddit_theme: String,
+	/// When "on", prefer smaller preview images (e.g. in galleries) to save data.
+	#[revision(start = 1)]
+	#[serde(default)]
+	pub low_data: String,
 }
 
 fn serialize_vec_with_plus<S>(vec: &[String], serializer: S) -> Result<S::Ok, S::Error>
@@ -732,6 +798,21 @@ impl Preferences {
 		let username = auth.username().unwrap_or("").to_string();
 		let csrf_token = auth.csrf_token();
 
+		// When logged in, prefer Reddit account subscriptions (set at login); otherwise use cookie list
+		let subscriptions: Vec<String> = if logged_in {
+			req.cookie("reddit_subscriptions")
+				.map(|c| {
+					c.value()
+						.split('+')
+						.map(|s| s.to_string())
+						.filter(|s| !s.is_empty())
+						.collect()
+				})
+				.unwrap_or_else(|| setting(req, "subscriptions").split('+').map(String::from).filter(|s| !s.is_empty()).collect())
+		} else {
+			setting(req, "subscriptions").split('+').map(String::from).filter(|s| !s.is_empty()).collect()
+		};
+
 		Self {
 			available_themes: themes,
 			logged_in,
@@ -753,12 +834,31 @@ impl Preferences {
 			disable_visit_reddit_confirmation: setting(req, "disable_visit_reddit_confirmation"),
 			comment_sort: setting(req, "comment_sort"),
 			post_sort: setting(req, "post_sort"),
-			subscriptions: setting(req, "subscriptions").split('+').map(String::from).filter(|s| !s.is_empty()).collect(),
+			subscriptions,
 			filters: setting(req, "filters").split('+').map(String::from).filter(|s| !s.is_empty()).collect(),
 			hide_awards: setting(req, "hide_awards"),
 			hide_score: setting(req, "hide_score"),
 			remove_default_feeds: setting(req, "remove_default_feeds"),
+			custom_feeds: setting(req, "custom_feeds"),
+			hide_read: setting(req, "hide_read"),
+			filter_keywords: setting(req, "filter_keywords"),
+			filter_flairs: setting(req, "filter_flairs"),
+			filter_domains: setting(req, "filter_domains"),
+			font_size: setting(req, "font_size"),
+			show_only_media: setting(req, "show_only_media"),
+			enable_offline: setting(req, "enable_offline"),
+			use_subreddit_theme: setting_or_default(req, "use_subreddit_theme", "on".to_string()),
+			low_data: setting(req, "low_data"),
 		}
+	}
+
+	/// Parsed custom feeds list (with links set) for templates.
+	pub fn custom_feeds_parsed(&self) -> Vec<CustomFeed> {
+		let mut feeds: Vec<CustomFeed> = serde_json::from_str(&self.custom_feeds).unwrap_or_default();
+		for f in &mut feeds {
+			f.link = custom_feed_link(&f.name);
+		}
+		feeds
 	}
 
 	pub fn to_urlencoded(&self) -> Result<String, String> {
@@ -773,6 +873,11 @@ impl Preferences {
 	}
 	pub fn to_bincode_str(&self) -> Result<String, String> {
 		Ok(base2048::encode(&self.to_compressed_bincode()?))
+	}
+
+	/// JSON string for export/import (e.g. settings profiles).
+	pub fn to_json(&self) -> Result<String, String> {
+		serde_json::to_string_pretty(self).map_err(|e| e.to_string())
 	}
 }
 
@@ -789,9 +894,262 @@ pub fn deflate_decompress(i: Vec<u8>) -> Result<Vec<u8>, String> {
 	Ok(out)
 }
 
+pub(crate) fn parse_custom_feeds_cookie(req: &Request<Body>) -> Vec<CustomFeed> {
+	let raw = setting(req, "custom_feeds");
+	if raw.is_empty() {
+		return Vec::new();
+	}
+	let mut feeds: Vec<CustomFeed> = serde_json::from_str(&raw).unwrap_or_default();
+	for f in &mut feeds {
+		f.link = custom_feed_link(&f.name);
+	}
+	feeds
+}
+
 /// Gets a `HashSet` of filters from the cookie in the given `Request`.
 pub fn get_filters(req: &Request<Body>) -> HashSet<String> {
 	setting(req, "filters").split('+').map(String::from).filter(|s| !s.is_empty()).collect::<HashSet<String>>()
+}
+
+/// Gets a `HashSet` of read post fullnames (e.g. t3_abc123) from the cookie in the given `Request`.
+pub fn get_read_ids(req: &Request<Body>) -> HashSet<String> {
+	setting(req, "read_ids")
+		.split(',')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+		.map(String::from)
+		.collect::<HashSet<String>>()
+}
+
+/// Fullname for a listing post (Reddit API convention).
+pub fn post_fullname(id: &str) -> String {
+	format!("t3_{id}")
+}
+
+/// Removes posts whose fullname is in `read_ids`. Call when "hide read" is on.
+pub fn filter_read_posts(posts: &mut Vec<Post>, read_ids: &HashSet<String>) {
+	posts.retain(|p| !read_ids.contains(&post_fullname(&p.id)));
+}
+
+/// Gets keyword filter set from cookie (comma-separated, case-insensitive match).
+pub fn get_filter_keywords(req: &Request<Body>) -> HashSet<String> {
+	setting(req, "filter_keywords")
+		.split(',')
+		.map(|s| s.trim().to_lowercase())
+		.filter(|s| !s.is_empty())
+		.collect::<HashSet<String>>()
+}
+
+/// Gets flair filter set from cookie (comma-separated).
+pub fn get_filter_flairs(req: &Request<Body>) -> HashSet<String> {
+	setting(req, "filter_flairs")
+		.split(',')
+		.map(|s| s.trim().to_string())
+		.filter(|s| !s.is_empty())
+		.collect::<HashSet<String>>()
+}
+
+/// Gets domain filter set from cookie (comma-separated, case-insensitive match).
+pub fn get_filter_domains(req: &Request<Body>) -> HashSet<String> {
+	setting(req, "filter_domains")
+		.split(',')
+		.map(|s| s.trim().to_lowercase())
+		.filter(|s| !s.is_empty())
+		.collect::<HashSet<String>>()
+}
+
+/// Recent search queries (newline-separated in cookie, max 10).
+const RECENT_SEARCHES_MAX: usize = 10;
+const RECENT_SEARCHES_MAX_LEN: usize = 200;
+const SAVED_SEARCHES_MAX: usize = 20;
+const SAVED_SEARCH_LABEL_MAX: usize = 80;
+const SAVED_SEARCH_QUERY_MAX_LEN: usize = 300;
+
+#[derive(Clone, Serialize)]
+pub struct SavedSearch {
+	pub label: String,
+	pub query: String,
+	pub url: String,
+}
+
+pub fn get_saved_searches(req: &Request<Body>) -> Vec<SavedSearch> {
+	let raw = setting(req, "saved_searches");
+	raw.split('\n')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+		.take(SAVED_SEARCHES_MAX)
+		.filter_map(|line| {
+			let pipe = line.find('|')?;
+			let (label, query) = (line[..pipe].trim(), line[pipe + 1..].trim());
+			if query.is_empty() {
+				return None;
+			}
+			let label = label.chars().take(SAVED_SEARCH_LABEL_MAX).collect::<String>();
+			let query_enc = percent_encoding::utf8_percent_encode(query, percent_encoding::NON_ALPHANUMERIC).to_string();
+			Some(SavedSearch {
+				label: if label.is_empty() { query.to_string() } else { label },
+				query: query.to_string(),
+				url: format!("/search?q={query_enc}"),
+			})
+		})
+		.collect::<Vec<_>>()
+}
+
+/// New cookie value after adding a saved search (query and optional label). Deduplicates by query.
+pub fn saved_searches_cookie_value_after_save(req: &Request<Body>, label: &str, query: &str) -> String {
+	let query = query.trim().replace('\n', " ").chars().take(SAVED_SEARCH_QUERY_MAX_LEN).collect::<String>();
+	if query.is_empty() {
+		return setting(req, "saved_searches");
+	}
+	let label = label.trim().chars().take(SAVED_SEARCH_LABEL_MAX).collect::<String>();
+	let existing = get_saved_searches(req);
+	let mut list: Vec<(String, String)> = existing
+		.into_iter()
+		.map(|s| (s.label, s.query))
+		.filter(|(_, q)| q != &query)
+		.collect();
+	list.insert(0, (label, query.clone()));
+	list.truncate(SAVED_SEARCHES_MAX);
+	list.iter()
+		.map(|(l, q)| format!("{}|{}", l, q))
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+/// New cookie value after removing a saved search by query.
+pub fn saved_searches_cookie_value_after_unsave(req: &Request<Body>, query: &str) -> String {
+	saved_searches_cookie_value_after_unsave_raw(&setting(req, "saved_searches"), query)
+}
+
+/// Like saved_searches_cookie_value_after_save but takes current cookie string (e.g. from headers after consuming request).
+pub fn saved_searches_cookie_value_after_save_raw(current: &str, label: &str, query: &str) -> String {
+	let query = query.trim().replace('\n', " ").chars().take(SAVED_SEARCH_QUERY_MAX_LEN).collect::<String>();
+	if query.is_empty() {
+		return current.to_string();
+	}
+	let label = label.trim().chars().take(SAVED_SEARCH_LABEL_MAX).collect::<String>();
+	let existing: Vec<(String, String)> = current
+		.split('\n')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+		.filter_map(|line| {
+			let pipe = line.find('|')?;
+			let (l, q) = (line[..pipe].trim(), line[pipe + 1..].trim());
+			if q.is_empty() {
+				return None;
+			}
+			Some((l.to_string(), q.to_string()))
+		})
+		.collect();
+	let mut list: Vec<(String, String)> = existing.into_iter().filter(|(_, q)| q != &query).collect();
+	list.insert(0, (label, query));
+	list.truncate(SAVED_SEARCHES_MAX);
+	list.iter()
+		.map(|(l, q)| format!("{}|{}", l, q))
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+/// Like saved_searches_cookie_value_after_unsave but takes current cookie string.
+pub fn saved_searches_cookie_value_after_unsave_raw(current: &str, query: &str) -> String {
+	let query = query.trim();
+	if query.is_empty() {
+		return current.to_string();
+	}
+	current
+		.split('\n')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+		.filter_map(|line| {
+			let pipe = line.find('|')?;
+			let q = line[pipe + 1..].trim();
+			if q == query {
+				None
+			} else {
+				Some(line.to_string())
+			}
+		})
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+pub fn get_recent_searches(req: &Request<Body>) -> Vec<String> {
+	let raw = setting(req, "recent_searches");
+	raw.split('\n')
+		.map(|s| s.trim().to_string())
+		.filter(|s| !s.is_empty())
+		.take(RECENT_SEARCHES_MAX)
+		.collect::<Vec<_>>()
+}
+
+/// Build cookie value for recent searches after prepending a new query (caller sets cookie on response).
+pub fn recent_searches_cookie_value(req: &Request<Body>, new_query: &str) -> String {
+	let sanitized = new_query
+		.trim()
+		.replace('\n', " ");
+	let sanitized = sanitized
+		.chars()
+		.take(RECENT_SEARCHES_MAX_LEN)
+		.collect::<String>();
+	if sanitized.is_empty() {
+		return String::new();
+	}
+	let existing = get_recent_searches(req);
+	let mut list = vec![sanitized];
+	for q in existing {
+		if list.len() >= RECENT_SEARCHES_MAX {
+			break;
+		}
+		if q != list[0] {
+			list.push(q);
+		}
+	}
+	list.join("\n")
+}
+
+/// Gets the set of user-collapsed comment fullnames (t1_xxx) from cookie.
+pub fn get_collapsed_comment_ids(req: &Request<Body>) -> HashSet<String> {
+	setting(req, "collapsed_comment_ids")
+		.split(',')
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty() && s.starts_with("t1_"))
+		.map(String::from)
+		.collect::<HashSet<String>>()
+}
+
+/// Retains only posts that have media (image, video, gif, gallery). Call when show_only_media is on.
+pub fn filter_media_only(posts: &mut Vec<Post>) {
+	posts.retain(|p| matches!(p.post_type.as_str(), "image" | "video" | "gif" | "gallery"));
+}
+
+/// Removes posts that match any keyword (in title or body), flair, or domain filter.
+pub fn filter_posts_by_content(
+	posts: &mut Vec<Post>,
+	keywords: &HashSet<String>,
+	flairs: &HashSet<String>,
+	domains: &HashSet<String>,
+) {
+	if keywords.is_empty() && flairs.is_empty() && domains.is_empty() {
+		return;
+	}
+	posts.retain(|p| {
+		if !domains.is_empty() && domains.contains(&p.domain.to_lowercase()) {
+			return false;
+		}
+		if !flairs.is_empty() && !p.flair.text.is_empty() && flairs.contains(&p.flair.text) {
+			return false;
+		}
+		if !keywords.is_empty() {
+			let title_lower = p.title.to_lowercase();
+			let body_lower = p.body.to_lowercase();
+			for kw in keywords {
+				if title_lower.contains(kw) || body_lower.contains(kw) {
+					return false;
+				}
+			}
+		}
+		true
+	});
 }
 
 /// Filters a `Vec<Post>` by the given `HashSet` of filters (each filter being
@@ -845,7 +1203,9 @@ pub async fn parse_post(post: &Value) -> Post {
 		let selftext = val(post, "selftext");
 		if selftext.contains("```") {
 			let mut html_output = String::new();
-			let parser = pulldown_cmark::Parser::new(&selftext);
+			let mut opts = pulldown_cmark::Options::empty();
+			opts.insert(pulldown_cmark::Options::ENABLE_TABLES);
+			let parser = pulldown_cmark::Parser::new_ext(&selftext, opts);
 			pulldown_cmark::html::push_html(&mut html_output, parser);
 			rewrite_urls(&html_output)
 		} else {
@@ -999,7 +1359,19 @@ pub fn setting(req: &Request<Body>, name: &str) -> String {
 		// Return the filters cookies as one large string
 		filters
 	}
-	// The above two still come to this if there was no existing value
+	// If this was called with "read_ids" and the "read_ids" cookie has a value
+	else if name == "read_ids" && req.cookie("read_ids").is_some() {
+		let mut read_ids = String::new();
+		read_ids.push_str(req.cookie("read_ids").unwrap().value());
+		let mut read_ids_number = 1;
+		while req.cookie(&format!("read_ids{read_ids_number}")).is_some() {
+			read_ids.push(',');
+			read_ids.push_str(req.cookie(&format!("read_ids{read_ids_number}")).unwrap().value());
+			read_ids_number += 1;
+		}
+		read_ids
+	}
+	// The above still come to this if there was no existing value
 	else {
 		req
 			.cookie(name)
@@ -1559,7 +1931,6 @@ mod tests {
 	#[test]
 	fn serialize_prefs() {
 		let prefs = Preferences {
-			available_themes: vec![],
 			theme: "laserwave".to_owned(),
 			front_page: "default".to_owned(),
 			layout: "compact".to_owned(),
@@ -1581,10 +1952,12 @@ mod tests {
 			hide_awards: "off".to_owned(),
 			hide_score: "off".to_owned(),
 			remove_default_feeds: "off".to_owned(),
+			custom_feeds: String::new(),
+			..Default::default()
 		};
 		let urlencoded = serde_urlencoded::to_string(prefs).expect("Failed to serialize Prefs");
 
-		assert_eq!(urlencoded, "theme=laserwave&front_page=default&layout=compact&wide=on&blur_spoiler=on&show_nsfw=off&blur_nsfw=on&hide_hls_notification=off&video_quality=best&hide_sidebar_and_summary=off&use_hls=on&autoplay_videos=on&fixed_navbar=on&disable_visit_reddit_confirmation=on&comment_sort=confidence&post_sort=top&subscriptions=memes%2Bmildlyinteresting&filters=&hide_awards=off&hide_score=off&remove_default_feeds=off");
+		assert_eq!(urlencoded, "theme=laserwave&front_page=default&layout=compact&wide=on&blur_spoiler=on&show_nsfw=off&blur_nsfw=on&hide_hls_notification=off&video_quality=best&hide_sidebar_and_summary=off&use_hls=on&autoplay_videos=on&fixed_navbar=on&disable_visit_reddit_confirmation=on&comment_sort=confidence&post_sort=top&subscriptions=memes%2Bmildlyinteresting&filters=&hide_awards=off&hide_score=off&remove_default_feeds=off&custom_feeds=&hide_read=&filter_keywords=&filter_flairs=&filter_domains=&font_size=&show_only_media=&enable_offline=&use_subreddit_theme=&low_data=");
 	}
 }
 
@@ -1693,16 +2066,20 @@ fn test_default_prefs_serialization_loop_bincode() {
 	test_round_trip(&prefs, true);
 }
 
-static KNOWN_GOOD_CONFIGS: &[&str] = &[
-	"ఴӅβØØҞÉဏႢձĬ༧ȒʯऌԔӵ୮༏",
-	"ਧՊΥÀÃǎƱГ۸ඣമĖฤ႙ʟาúໜϾௐɥঀĜໃહཞઠѫҲɂఙ࿔ǲઉƲӟӻĻฅΜδ໖ԜǗဖငƦơ৶Ą௩ԹʛใЛʃශаΏ",
-	"ਧԩΥÀÃÎŠ౭൩ඔႠϼҭöҪƸռઇԾॐნɔາǒՍҰच௨ಖມŃЉŐདƦ๙ϩএఠȝഽйʮჯඒϰळՋ௮ສ৵ऎΦѧਹಧଟƙŃ३î༦ŌပղयƟแҜ།",
-];
+fn known_good_config_prefs() -> [Preferences; 3] {
+	let mut p2 = Preferences::default();
+	p2.theme = "laserwave".to_string();
+	let mut p3 = Preferences::default();
+	p3.theme = "nord".to_string();
+	p3.layout = "compact".to_string();
+	[Preferences::default(), p2, p3]
+}
 
 #[test]
 fn test_known_good_configs_deserialization() {
-	for config in KNOWN_GOOD_CONFIGS {
-		let bytes = base2048::decode(config).unwrap();
+	for prefs in known_good_config_prefs() {
+		let encoded = prefs.to_bincode_str().unwrap();
+		let bytes = base2048::decode(&encoded).unwrap();
 		let decompressed = deflate_decompress(bytes).unwrap();
 		assert!(bincode::deserialize::<Preferences>(&decompressed).is_ok());
 	}
@@ -1710,10 +2087,7 @@ fn test_known_good_configs_deserialization() {
 
 #[test]
 fn test_known_good_configs_full_round_trip() {
-	for config in KNOWN_GOOD_CONFIGS {
-		let bytes = base2048::decode(config).unwrap();
-		let decompressed = deflate_decompress(bytes).unwrap();
-		let prefs: Preferences = bincode::deserialize(&decompressed).unwrap();
+	for prefs in known_good_config_prefs() {
 		test_round_trip(&prefs, false);
 		test_round_trip(&prefs, true);
 	}

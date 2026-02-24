@@ -13,6 +13,10 @@
 
 {% block content %}
 <div id="settings">
+	<div class="settings_search_wrap">
+		<label for="settings_search">Search settings:</label>
+		<input type="search" id="settings_search" placeholder="Filter by name..." autocomplete="off">
+	</div>
 	<form action="/settings" method="POST">
 		<div class="prefs">
 			<fieldset>
@@ -48,6 +52,35 @@
 					<label for="wide">Wide UI:</label>
 					<input type="hidden" value="off" name="wide">
 					<input type="checkbox" name="wide" id="wide" {% if prefs.wide=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="font_size">Font size:</label>
+					<select name="font_size" id="font_size">
+						{% call utils::options(prefs.font_size, ["default", "small", "large"], "default") %}
+					</select>
+				</div>
+				<div class="prefs-group">
+					<label for="show_only_media" title="In feeds, show only posts with image, video, gif, or gallery">Show only media posts</label>
+					<input type="hidden" value="off" name="show_only_media">
+					<input type="checkbox" name="show_only_media" id="show_only_media" {% if prefs.show_only_media=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="enable_offline" title="Cache CSS, JS, and images so pages load from cache when offline or slow">Enable offline caching</label>
+					<input type="hidden" value="off" name="enable_offline">
+					<input type="checkbox" name="enable_offline" id="enable_offline" {% if prefs.enable_offline=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group" id="clear_cache_wrap">
+					<button type="button" id="clear_offline_cache_btn" title="Clear cached static assets (e.g. after enabling offline)">Clear offline cache</button>
+				</div>
+				<div class="prefs-group">
+					<label for="use_subreddit_theme" title="Use each subreddit's accent color (from Reddit) on that community's page">Use subreddit theme (accent color)</label>
+					<input type="hidden" value="off" name="use_subreddit_theme">
+					<input type="checkbox" name="use_subreddit_theme" id="use_subreddit_theme" {% if prefs.use_subreddit_theme=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="low_data" title="Prefer smaller preview images in galleries to use less data">Low data (smaller gallery images)</label>
+					<input type="hidden" value="off" name="low_data">
+					<input type="checkbox" name="low_data" id="low_data" {% if prefs.low_data=="on" %}checked{% endif %}>
 				</div>
 			</fieldset>
 			<fieldset>
@@ -110,6 +143,11 @@
 						%}checked{% endif %}>
 				</div>
 				<div class="prefs-group">
+					<label for="hide_read" title="Hide posts you have already seen (marked read on scroll)">Hide read posts</label>
+					<input type="hidden" value="off" name="hide_read">
+					<input type="checkbox" name="hide_read" id="hide_read" {% if prefs.hide_read=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
 					<label for="use_hls">Use HLS for videos</label>
 					<details id="feeds">
 						<summary>Why?</summary>
@@ -144,6 +182,22 @@
 					<input type="hidden" value="off" name="disable_visit_reddit_confirmation">
 					<input type="checkbox" name="disable_visit_reddit_confirmation" {% if
 						prefs.disable_visit_reddit_confirmation=="on" %}checked{% endif %}>
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>Content filters</legend>
+				<p class="helper">Hide posts that match any of these (comma-separated).</p>
+				<div class="prefs-group">
+					<label for="filter_keywords">Keyword filter (in title or body):</label>
+					<input type="text" name="filter_keywords" id="filter_keywords" value="{{ prefs.filter_keywords }}" placeholder="word1, word2">
+				</div>
+				<div class="prefs-group">
+					<label for="filter_flairs">Flair filter (post link flairs):</label>
+					<input type="text" name="filter_flairs" id="filter_flairs" value="{{ prefs.filter_flairs }}" placeholder="Discussion, News">
+				</div>
+				<div class="prefs-group">
+					<label for="filter_domains">Domain filter (e.g. example.com):</label>
+					<input type="text" name="filter_domains" id="filter_domains" value="{{ prefs.filter_domains }}" placeholder="twitter.com, youtube.com">
 				</div>
 			</fieldset>
 			<input id="save" type="submit" value="Save">
@@ -203,15 +257,64 @@
 				value="{% match prefs.to_bincode_str() %}{% when Ok with (bincode_str) %}{{ bincode_str }}{% when Err with (err) %}Error: {{ err }}{% endmatch %}"
 				readonly>
 			<button id="copy" class="copy">Copy</button>
+			<span style="margin-left:1em"><a href="/settings/export-json" download="redlib-settings.json">Export as JSON</a></span>
 
 			<br />
 			<form action="/settings/encoded-restore/" method="POST">
 				<input type="text" id="encoded_prefs" name="encoded_prefs" value=""
 					placeholder="Paste your encoded settings here">
-				<button class="import" type="submit">Import</button>
+				<button class="import" type="submit">Import (encoded)</button>
+			</form>
+			<form action="/settings/import-json" method="POST" style="margin-top:8px">
+				<textarea name="json" rows="4" placeholder="Paste JSON settings here" style="width:100%; max-width:400px"></textarea>
+				<button type="submit">Import (JSON)</button>
 			</form>
 		</div>
 	</div>
 </div>
+<script>
+(function() {
+	var search = document.getElementById("settings_search");
+	var container = document.getElementById("settings");
+	if (!search || !container) return;
+	function filter() {
+		var q = (search.value || "").trim().toLowerCase();
+		container.querySelectorAll("fieldset").forEach(function(fs) {
+			var legend = (fs.querySelector("legend") && fs.querySelector("legend").textContent) || "";
+			var groups = fs.querySelectorAll(".prefs-group");
+			var anyVisible = false;
+			groups.forEach(function(grp) {
+				var label = (grp.querySelector("label") && grp.querySelector("label").textContent) || "";
+				var match = !q || legend.toLowerCase().indexOf(q) >= 0 || label.toLowerCase().indexOf(q) >= 0;
+				grp.style.display = match ? "" : "none";
+				if (match) anyVisible = true;
+			});
+			fs.style.display = anyVisible ? "" : "none";
+		});
+	}
+	search.addEventListener("input", filter);
+	search.addEventListener("search", filter);
+})();
+(function () {
+	var btn = document.getElementById("clear_offline_cache_btn");
+	if (!btn) return;
+	btn.addEventListener("click", function () {
+		var done = function () {
+			btn.textContent = "Cache cleared";
+			setTimeout(function () { window.location.reload(); }, 800);
+		};
+		if (!window.caches) { done(); return; }
+		caches.keys().then(function (keys) {
+			return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+		}).then(function () {
+			if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+				return navigator.serviceWorker.getRegistrations().then(function (regs) {
+					return Promise.all(regs.map(function (r) { return r.unregister(); }));
+				});
+			}
+		}).then(done).catch(done);
+	});
+})();
+</script>
 
 {% endblock %}

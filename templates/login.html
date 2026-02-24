@@ -13,23 +13,9 @@
 
 	<div id="login_options">
 
-		<!-- ── Option 1: Reddit OAuth ─────────────────────────────── -->
-		<section class="login_card" id="login_reddit_card">
-			<h2>Reddit account</h2>
-			<p class="login_card_desc">
-				Authorize via Reddit's OAuth flow. Grants voting, saving, and
-				profile access. Requires a registered Reddit app client ID.
-			</p>
-			<form method="POST" action="/login/reddit">
-				<button type="submit" class="login_btn login_btn_reddit">
-					Connect to Reddit →
-				</button>
-			</form>
-		</section>
-
-		<!-- ── Option 2: SSH browser import ──────────────────────── -->
+		<!-- SSH browser import: extract Reddit session from Firefox/LibreWolf on a remote host -->
 		<section class="login_card" id="login_ssh_card">
-			<h2>Import from browser</h2>
+			<h2>Import session via SSH</h2>
 			<p class="login_card_desc">
 				Copy the active Reddit session from a Firefox or LibreWolf
 				install on a remote machine via SSH. No app registration needed.
@@ -47,6 +33,16 @@
 					<input type="text" id="ssh_user" name="ssh_user"
 						   value="{{ ssh_user }}"
 						   placeholder="username"
+						   autocomplete="off" spellcheck="false">
+				</div>
+				<div class="login_field">
+					<label for="ssh_private_key">SSH private key (optional)</label>
+					<textarea id="ssh_private_key" name="ssh_private_key" rows="6" placeholder="Paste your private key (same key you use to ssh user@host from your machine; its public key is in authorized_keys on the remote host)." autocomplete="off" spellcheck="false"></textarea>
+					<p class="login_field_hint">Use <strong>your</strong> private key — the one that logs you into the host above (e.g. <code>ssh {{ ssh_user }}@{{ ssh_host }}</code>). The redlibe server uses it once to SSH from the pod to that host. Not the pod’s key or the host’s key. Multi-line, begins with -----BEGIN ... PRIVATE KEY-----. Or use the password field instead.</p>
+				</div>
+				<div class="login_field">
+					<label for="ssh_password">SSH password (optional)</label>
+					<input type="password" id="ssh_password" name="ssh_password" placeholder="Password for SSH login"
 						   autocomplete="off" spellcheck="false">
 				</div>
 				<div class="login_field login_field_radio">

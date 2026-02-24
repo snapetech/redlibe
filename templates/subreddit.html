@@ -7,6 +7,15 @@
 	{% else %}Redlib{% endif %}
 {% endblock %}
 
+{% block head %}
+	{% call super() %}
+	{% if prefs.use_subreddit_theme == "on" %}
+	{% if sub.key_color != "" %}
+	<style>:root { --accent: {{ sub.key_color }}; }</style>
+	{% endif %}
+	{% endif %}
+{% endblock %}
+
 {% block search %}
 	{% call utils::search(["/r/", sub.name.as_str()].concat(), "") %}
 {% endblock %}
@@ -68,6 +77,30 @@
 			<script src="/hls.min.js"></script>
 			<script src="/playHLSVideo.js"></script>
 			{% endif %}
+			<script>
+			(function(){
+				var pending = new Set();
+				var timer = null;
+				function sendMarkRead() {
+					if (pending.size === 0) return;
+					var ids = Array.from(pending).join(',');
+					pending.clear();
+					fetch('/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'ids=' + encodeURIComponent(ids), credentials: 'same-origin' }).catch(function(){});
+				}
+				var observer = new IntersectionObserver(function(entries) {
+					entries.forEach(function(entry) {
+						if (!entry.isIntersecting) return;
+						var id = entry.target.getAttribute('data-post-id');
+						if (id) { pending.add(id); }
+					});
+					if (pending.size > 0) {
+						if (timer) clearTimeout(timer);
+						timer = setTimeout(sendMarkRead, 800);
+					}
+				}, { rootMargin: '100px', threshold: 0.1 });
+				document.querySelectorAll('#posts .post[data-post-id]').forEach(function(el) { observer.observe(el); });
+			})();
+			</script>
 			</div>
 			{% endif %}
 
@@ -135,6 +168,11 @@
                             <a href="/r/{{ sub.name }}.rss" title="RSS feed for r/{{ sub.name }}">
                                 <button class="subscribe">RSS feed</button >
                             </a>
+						</div>
+						{% endif %}
+						{% if prefs.logged_in %}
+						<div id="sub_submit">
+							<a href="/r/{{ sub.name }}/submit" title="Submit a post to r/{{ sub.name }}"><button class="subscribe">Submit</button></a>
 						</div>
 						{% endif %}
 				</div>
