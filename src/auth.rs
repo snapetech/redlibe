@@ -33,6 +33,7 @@ use uuid::Uuid;
 use crate::client;
 use crate::config::{set_runtime_user_agent, CONFIG};
 use crate::server::{RequestExt, ResponseExt};
+use crate::token_import;
 use crate::utils::{redirect, template, Preferences};
 
 // ----- Login page template -----
@@ -45,6 +46,14 @@ struct LoginPage<'a> {
 	error: Option<&'a str>,
 	ssh_host: String,
 	ssh_user: String,
+	local_profiles: Vec<LoginLocalProfile>,
+}
+
+#[derive(Debug, Clone)]
+struct LoginLocalProfile {
+	id: String,
+	label: String,
+	browser: String,
 }
 
 /// Maximum POST body size accepted by auth handlers (16 KiB — allows pasted SSH private key).
@@ -570,14 +579,46 @@ pub async fn login_page(req: Request<Body>) -> Result<Response<Body>, String> {
 		return Ok(redirect(AUTH_LANDING_PATH));
 	}
 	let prefs = Preferences::new(&req);
-	let page = LoginPage {
+	let page = build_login_page(&prefs, None);
+	Ok(template(&page))
+}
+
+fn build_login_page<'a>(prefs: &Preferences, error: Option<&'a str>) -> LoginPage<'a> {
+	let local_profiles = token_import::discover_local_profiles()
+		.into_iter()
+		.map(|p| LoginLocalProfile {
+			id: p.id,
+			label: p.label,
+			browser: p.browser,
+		})
+		.collect();
+
+	LoginPage {
 		url: "/login".to_string(),
 		ssh_host: CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string()),
 		ssh_user: CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()),
-		error: None,
-		prefs,
+		error,
+		prefs: prefs.clone(),
+		local_profiles,
+	}
+}
+
+async fn complete_browser_import_login(bearer_token: String, user_agent: Option<String>) -> Result<Response<Body>, String> {
+	let username = fetch_username(&bearer_token).await.unwrap_or_else(|_| "unknown".to_string());
+
+	if let Some(ua) = user_agent.filter(|s| !s.is_empty()) {
+		set_runtime_user_agent(ua);
+	}
+
+	let session = SessionData {
+		access_token: bearer_token,
+		refresh_token: String::new(),
+		username,
+		expires_at: OffsetDateTime::now_utc().unix_timestamp() + 6 * 3600,
+		csrf_token: Uuid::new_v4().to_string(),
 	};
-	Ok(template(&page))
+
+	add_session_to_vault(session)
 }
 
 /// `POST /login/reddit` — generate a CSRF state token, then redirect to Reddit's
@@ -587,12 +628,8 @@ pub async fn login_reddit(req: Request<Body>) -> Result<Response<Body>, String> 
 		Some(id) if !id.trim().is_empty() && !id.eq_ignore_ascii_case("placeholder") => id.to_string(),
 		_ => {
 			let prefs = Preferences::new(&req);
-			let ssh_host = CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string());
-			let ssh_user = CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string());
 			return render_login_error(
 				&prefs,
-				&ssh_host,
-				&ssh_user,
 				"Reddit OAuth is not configured. Set REDLIB_OAUTH_CLIENT_ID and REDLIB_OAUTH_CLIENT_SECRET in redlibe-secrets. In your Reddit app (reddit.com/prefs/apps) set redirect URI to https://redlibe.home/auth/callback.",
 			);
 		}
@@ -651,17 +688,17 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 
 	// Validate ssh_host and ssh_user to prevent injection (used as CLI args, not shell strings)
 	if !ssh_host.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
-		return render_login_error(&prefs, &ssh_host, &ssh_user, "Invalid SSH host — only alphanumeric, dots, hyphens, underscores allowed");
+		return render_login_error(&prefs, "Invalid SSH host — only alphanumeric, dots, hyphens, underscores allowed");
 	}
 	if !ssh_user.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-		return render_login_error(&prefs, &ssh_host, &ssh_user, "Invalid SSH user — only alphanumeric, underscores, hyphens allowed");
+		return render_login_error(&prefs, "Invalid SSH user — only alphanumeric, underscores, hyphens allowed");
 	}
 
 	let has_pasted_key = form.get("ssh_private_key").map(|s| !s.trim().is_empty()).unwrap_or(false);
 	let ssh_password = form.get("ssh_password").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 	let has_config_key = CONFIG.ssh_key.as_ref().map(|k| !k.trim().is_empty()).unwrap_or(false);
 	if !has_pasted_key && ssh_password.is_none() && !has_config_key {
-		return render_login_error(&prefs, &ssh_host, &ssh_user, "Provide either an SSH private key or an SSH password (or both).");
+		return render_login_error(&prefs, "Provide either an SSH private key or an SSH password (or both).");
 	}
 
 	// Use pasted private key from form if provided; otherwise we'll use password or config key
@@ -677,8 +714,6 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 				if normalized.lines().count() <= 1 {
 					return render_login_error(
 						&prefs,
-						&ssh_host,
-						&ssh_user,
 						"You pasted a public key (the one-line .pub file). SSH login requires your private key: open the file without .pub (e.g. ~/.ssh/id_ed25519) and paste its full contents (starts with -----BEGIN ... PRIVATE KEY-----).",
 					);
 				}
@@ -686,14 +721,14 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			let temp_dir = std::env::temp_dir();
 			let path = temp_dir.join(format!("redlib_ssh_{}.key", Uuid::new_v4()));
 			if std::fs::write(&path, normalized).is_err() {
-				return render_login_error(&prefs, &ssh_host, &ssh_user, "Could not write temporary key file");
+				return render_login_error(&prefs, "Could not write temporary key file");
 			}
 			#[cfg(unix)]
 			{
 				use std::os::unix::fs::PermissionsExt;
 				if std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).is_err() {
 					let _ = std::fs::remove_file(&path);
-					return render_login_error(&prefs, &ssh_host, &ssh_user, "Could not set key file permissions");
+					return render_login_error(&prefs, "Could not set key file permissions");
 				}
 			}
 			let path_str = path.to_string_lossy().into_owned();
@@ -728,7 +763,7 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			ssh_extract_token_with_password(&ssh_host, &ssh_user, pass, browser).await
 		}
 		(None, None) => {
-			return render_login_error(&prefs, &ssh_host, &ssh_user, "Provide either an SSH private key or an SSH password (or both).");
+			return render_login_error(&prefs, "Provide either an SSH private key or an SSH password (or both).");
 		}
 	};
 
@@ -743,51 +778,44 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			} else {
 				format!("SSH extraction failed: {e}")
 			};
-			render_login_error(&prefs, &ssh_host, &ssh_user, &msg)
+			render_login_error(&prefs, &msg)
 		}
 		Ok((bearer_token, user_agent)) => {
-			// Fetch username from Reddit
-			let username = fetch_username(&bearer_token).await.unwrap_or_else(|_| "unknown".to_string());
+			complete_browser_import_login(bearer_token, Some(user_agent)).await
+		}
+	}
+}
 
-			// Update the global UA so all outbound requests match the imported browser
-			if !user_agent.is_empty() {
-				set_runtime_user_agent(user_agent);
-			}
+/// `POST /login/local-import` — import a browser token from a local browser profile.
+///
+/// Form fields:
+/// - `browser` (librewolf | firefox | chrome | edge)
+/// - `profile_id` (optional discovered profile id)
+/// - `profile_path` (optional manual override path)
+pub async fn login_local_import(req: Request<Body>) -> Result<Response<Body>, String> {
+	let prefs = Preferences::new(&req);
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_BODY_SIZE {
+		return Err("Request body too large".to_string());
+	}
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
-			let session = SessionData {
-				access_token: bearer_token,
-				refresh_token: String::new(), // browser sessions have no refresh token
-				username,
-				// Browser tokens are typically session-scoped; use 6-hour window
-				expires_at: OffsetDateTime::now_utc().unix_timestamp() + 6 * 3600,
-				csrf_token: Uuid::new_v4().to_string(),
-			};
+	let browser = form.get("browser").map(|s| s.as_str()).unwrap_or("firefox");
+	let profile_id = form.get("profile_id").map(|s| s.as_str());
+	let profile_path = form.get("profile_path").map(|s| s.as_str());
 
-			let encrypted = encrypt_session(&session).ok_or("Failed to encrypt session data")?;
-			let mut response = redirect(AUTH_LANDING_PATH);
-			response.insert_cookie(
-				Cookie::build((session_cookie_name(), encrypted))
-					.path("/")
-					.http_only(true)
-					.secure(secure_cookies())
-					.same_site(SameSite::Lax)
-					.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
-					.into(),
-			);
-			Ok(response)
+	match token_import::import_local(browser, profile_id, profile_path) {
+		Ok(imported) => complete_browser_import_login(imported.bearer_token, imported.user_agent).await,
+		Err(e) => {
+			let msg = format!("Local import failed: {e}");
+			render_login_error(&prefs, &msg)
 		}
 	}
 }
 
 /// Re-render the login page with an inline error message.
-fn render_login_error(prefs: &Preferences, ssh_host: &str, ssh_user: &str, msg: &str) -> Result<Response<Body>, String> {
-	let page = LoginPage {
-		url: "/login".to_string(),
-		ssh_host: ssh_host.to_string(),
-		ssh_user: ssh_user.to_string(),
-		error: Some(msg),
-		prefs: prefs.clone(),
-	};
+fn render_login_error(prefs: &Preferences, msg: &str) -> Result<Response<Body>, String> {
+	let page = build_login_page(prefs, Some(msg));
 	Ok(template(&page))
 }
 
@@ -1188,8 +1216,6 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 	}
 	// Clear the CSRF cookie — it's served its purpose
 	response.remove_cookie(csrf_cookie_name().to_string());
-	response.remove_cookie(session_cookie_name().to_string());
-	response.remove_cookie(subscriptions_cookie_name().to_string());
 	Ok(response)
 }
 

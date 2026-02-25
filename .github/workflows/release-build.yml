@@ -1,0 +1,93 @@
+name: release-build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux-x86_64
+            exe_suffix: ""
+          - os: windows-latest
+            artifact_suffix: windows-x86_64
+            exe_suffix: ".exe"
+          - os: macos-latest
+            artifact_suffix: macos-x86_64
+            exe_suffix: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release --bins
+
+      - name: Package artifacts (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/redlib dist/redlib
+          cp target/release/redlib-desktop dist/redlib-desktop
+          tar -C dist -czf "redlib-${{ matrix.artifact_suffix }}.tar.gz" redlib redlib-desktop
+
+      - name: Package Tauri scaffold + backend (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf tauri-dist
+          mkdir -p tauri-dist
+          cp -R desktop/tauri tauri-dist/tauri
+          mkdir -p tauri-dist/tauri/src-tauri/binaries/${{ matrix.artifact_suffix }}
+          cp target/release/redlib "tauri-dist/tauri/src-tauri/binaries/${{ matrix.artifact_suffix }}/redlib"
+          tar -C tauri-dist -czf "redlib-tauri-scaffold-${{ matrix.artifact_suffix }}.tar.gz" tauri
+
+      - name: Package artifacts (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/release/redlib${{ matrix.exe_suffix }}" "dist/redlib${{ matrix.exe_suffix }}"
+          Copy-Item "target/release/redlib-desktop${{ matrix.exe_suffix }}" "dist/redlib-desktop${{ matrix.exe_suffix }}"
+          Compress-Archive -Path dist/* -DestinationPath "redlib-${{ matrix.artifact_suffix }}.zip" -Force
+
+      - name: Package Tauri scaffold + backend (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force tauri-dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force tauri-dist | Out-Null
+          Copy-Item -Recurse desktop/tauri tauri-dist/tauri
+          New-Item -ItemType Directory -Force "tauri-dist/tauri/src-tauri/binaries/${{ matrix.artifact_suffix }}" | Out-Null
+          Copy-Item "target/release/redlib${{ matrix.exe_suffix }}" "tauri-dist/tauri/src-tauri/binaries/${{ matrix.artifact_suffix }}/redlib${{ matrix.exe_suffix }}"
+          Compress-Archive -Path tauri-dist/* -DestinationPath "redlib-tauri-scaffold-${{ matrix.artifact_suffix }}.zip" -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redlib-${{ matrix.artifact_suffix }}
+          path: |
+            redlib-${{ matrix.artifact_suffix }}.tar.gz
+            redlib-${{ matrix.artifact_suffix }}.zip
+
+      - name: Upload Tauri scaffold artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redlib-tauri-scaffold-${{ matrix.artifact_suffix }}
+          path: |
+            redlib-tauri-scaffold-${{ matrix.artifact_suffix }}.tar.gz
+            redlib-tauri-scaffold-${{ matrix.artifact_suffix }}.zip

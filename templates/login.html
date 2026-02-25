@@ -13,6 +13,54 @@
 
 	<div id="login_options">
 
+		<section class="login_card" id="login_local_card">
+			<h2>Import session from this machine</h2>
+			<p class="login_card_desc">
+				Read a Reddit browser session from a local Firefox/LibreWolf/Chrome/Edge profile.
+				Firefox-family works now. Chromium profiles are discovered, but encrypted cookies may require extra OS support.
+			</p>
+			<form method="POST" action="/login/local-import">
+				<div class="login_field login_field_radio">
+					<span class="login_radio_label">Browser</span>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="firefox" checked>
+						Firefox
+					</label>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="librewolf">
+						LibreWolf
+					</label>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="chrome">
+						Chrome
+					</label>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="edge">
+						Edge
+					</label>
+				</div>
+				<div class="login_field">
+					<label for="profile_id">Discovered profile (optional)</label>
+					<select id="profile_id" name="profile_id">
+						<option value="">Auto-select first matching profile</option>
+						{% for profile in local_profiles %}
+						<option value="{{ profile.id }}">{{ profile.label }} — {{ profile.browser }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="login_field">
+					<label for="profile_path">Manual profile path (optional)</label>
+					<input type="text" id="profile_path" name="profile_path"
+						   placeholder="Path to browser profile directory (contains cookies.sqlite or Cookies)"
+						   autocomplete="off" spellcheck="false">
+					<p class="login_field_hint">Leave blank to auto-discover a profile.</p>
+				</div>
+				<button type="submit" class="login_btn">
+					Import local session →
+				</button>
+			</form>
+		</section>
+
 		<!-- SSH browser import: extract Reddit session from Firefox/LibreWolf on a remote host -->
 		<section class="login_card" id="login_ssh_card">
 			<h2>Import session via SSH</h2>

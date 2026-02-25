@@ -426,6 +426,10 @@ async fn main() {
 		.at("/login/ssh-import")
 		.get(|_| async { Ok(redirect("/login")) }.boxed())
 		.post(|r| auth::login_ssh_import(r).boxed());
+	app
+		.at("/login/local-import")
+		.get(|_| async { Ok(redirect("/login")) }.boxed())
+		.post(|r| auth::login_local_import(r).boxed());
 	app.at("/auth/callback").get(|r| auth::oauth_callback(r).boxed());
 	app.at("/logout").post(|r| auth::logout(r).boxed());
 	app.at("/auth/switch").post(|r| auth::switch_account(r).boxed());

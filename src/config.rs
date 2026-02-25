@@ -1,5 +1,6 @@
 use arc_swap::ArcSwap;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{env::var, fs::read_to_string, sync::LazyLock};
 
@@ -212,8 +213,17 @@ impl Config {
 			let new_file = read_to_string(name);
 			new_file.ok().and_then(|new_file| toml::from_str::<Self>(&new_file).ok())
 		};
-
-		let config = load_config("redlib.toml").or_else(|| load_config("libreddit.toml")).unwrap_or_default();
+		let mut config = load_config("redlib.toml").or_else(|| load_config("libreddit.toml"));
+		if config.is_none() {
+			for path in per_user_config_candidates() {
+				let new_file = read_to_string(&path);
+				if let Some(parsed) = new_file.ok().and_then(|s| toml::from_str::<Self>(&s).ok()) {
+					config = Some(parsed);
+					break;
+				}
+			}
+		}
+		let config = config.unwrap_or_default();
 
 		// This function defines the order of preference - first check for
 		// environment variables with "REDLIB", then check the legacy LIBREDDIT
@@ -264,6 +274,40 @@ impl Config {
 			ssh_strict_host_key_checking: parse("REDLIB_SSH_STRICT_HOST_KEY_CHECKING"),
 		}
 	}
+}
+
+fn per_user_config_candidates() -> Vec<PathBuf> {
+	let mut out = Vec::new();
+
+	if cfg!(target_os = "windows") {
+		if let Some(appdata) = std::env::var_os("APPDATA") {
+			let base = PathBuf::from(appdata).join("redlibe");
+			out.push(base.join("redlib.toml"));
+			out.push(base.join("libreddit.toml"));
+		}
+		return out;
+	}
+
+	if cfg!(target_os = "macos") {
+		if let Some(home) = std::env::var_os("HOME") {
+			let base = PathBuf::from(home).join("Library").join("Application Support").join("redlibe");
+			out.push(base.join("redlib.toml"));
+			out.push(base.join("libreddit.toml"));
+		}
+		return out;
+	}
+
+	if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+		let base = PathBuf::from(xdg).join("redlibe");
+		out.push(base.join("redlib.toml"));
+		out.push(base.join("libreddit.toml"));
+	}
+	if let Some(home) = std::env::var_os("HOME") {
+		let base = PathBuf::from(home).join(".config").join("redlibe");
+		out.push(base.join("redlib.toml"));
+		out.push(base.join("libreddit.toml"));
+	}
+	out
 }
 
 fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {

@@ -1,0 +1,101 @@
+name: tauri-bundle
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            sidecar_ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar_ext: ".exe"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            sidecar_ext: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux Tauri system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Build backend sidecar
+        run: cargo build --release --bin redlib --target ${{ matrix.target }}
+
+      - name: Prepare Tauri sidecar binary (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/tauri/src-tauri/binaries
+          cp "target/${{ matrix.target }}/release/redlib" "desktop/tauri/src-tauri/binaries/redlib-${{ matrix.target }}"
+          chmod +x "desktop/tauri/src-tauri/binaries/redlib-${{ matrix.target }}"
+
+      - name: Prepare Tauri sidecar binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop/tauri/src-tauri/binaries | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/redlib.exe" "desktop/tauri/src-tauri/binaries/redlib-${{ matrix.target }}.exe"
+
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional macOS signing/notarization (see docs/ci-signing-secrets.md)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Optional Tauri updater signing
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop/tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: "Redlibe Desktop ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+
+      - name: Upload Tauri bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-bundle-${{ matrix.target }}
+          path: |
+            desktop/tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**

@@ -16,6 +16,7 @@ pub mod server;
 pub mod settings;
 pub mod submit;
 pub mod subreddit;
+pub mod token_import;
 pub mod user;
 pub mod utils;
 pub mod vote;
