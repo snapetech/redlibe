@@ -102,7 +102,7 @@ async fn style() -> Result<Response<Body>, String> {
 		Response::builder()
 			.status(200)
 			.header("content-type", "text/css")
-			.header("Cache-Control", "public, max-age=1209600, s-maxage=86400")
+			.header("Cache-Control", "no-cache, max-age=0, must-revalidate")
 			.body(res.to_string().into())
 			.unwrap_or_default(),
 	)
@@ -262,6 +262,7 @@ async fn main() {
 		.at("/check_update.js")
 		.get(|_| resource(include_str!("../static/check_update.js"), "text/javascript", false).boxed());
 	app.at("/copy.js").get(|_| resource(include_str!("../static/copy.js"), "text/javascript", false).boxed());
+	app.at("/settings.js").get(|_| resource(include_str!("../static/settings.js"), "text/javascript", false).boxed());
 
 	app.at("/commits.atom").get(|_| async move { proxy_commit_info().await }.boxed());
 	app.at("/instances.json").get(|_| async move { proxy_instances().await }.boxed());
