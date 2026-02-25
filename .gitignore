@@ -1,5 +1,5 @@
-# Agent CLI local config (per-user, do not commit)
-.claude/settings.local.json
+# Agent CLI / local tooling config (per-user, do not commit)
+.claude/
 opencode.json
 .cursor/
 target/
