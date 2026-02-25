@@ -11,10 +11,12 @@ use log::{error, trace, warn};
 use percent_encoding::{percent_encode, CONTROLS};
 use serde_json::Value;
 
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU32};
 use std::sync::LazyLock;
 use std::{io, result::Result};
+use tokio::sync::oneshot;
 
 use crate::auth::{refresh_access_token, AuthContext, SessionData};
 use crate::dbg_msg;
@@ -80,6 +82,11 @@ static UPSTREAM_FAILURE_429: AtomicU32 = AtomicU32::new(0);
 static UPSTREAM_FAILURE_PARSE: AtomicU32 = AtomicU32::new(0);
 static UPSTREAM_FAILURE_TRANSPORT: AtomicU32 = AtomicU32::new(0);
 static UPSTREAM_SUCCESS_COUNT: AtomicU32 = AtomicU32::new(0);
+static JSON_COALESCE_LEADER_COUNT: AtomicU32 = AtomicU32::new(0);
+static JSON_COALESCE_FOLLOWER_COUNT: AtomicU32 = AtomicU32::new(0);
+static JSON_COALESCE_BROADCAST_COUNT: AtomicU32 = AtomicU32::new(0);
+static INFLIGHT_JSON_REQUESTS: LazyLock<std::sync::Mutex<HashMap<String, Vec<oneshot::Sender<Result<Value, String>>>>>> =
+	LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 const URL_PAIRS: [(&str, &str); 2] = [
 	(ALTERNATIVE_REDDIT_URL_BASE, ALTERNATIVE_REDDIT_URL_BASE_HOST),
@@ -165,14 +172,104 @@ async fn sleep_backoff_with_jitter(attempt: u8) {
 
 pub fn upstream_metrics_snapshot_json() -> String {
 	format!(
-		r#"{{"success":{},"consecutive_failures":{},"html_403":{},"http_429":{},"parse":{},"transport":{},"circuit_open_until":{}}}"#,
+		r#"{{"success":{},"consecutive_failures":{},"html_403":{},"http_429":{},"parse":{},"transport":{},"circuit_open_until":{},"coalesce_leaders":{},"coalesce_followers":{},"coalesce_broadcasts":{},"coalesce_inflight":{},"oauth_backend":"{}","oauth_ratelimit_remaining":{},"oauth_is_rolling_over":{}}}"#,
 		UPSTREAM_SUCCESS_COUNT.load(Ordering::Relaxed),
 		UPSTREAM_CONSECUTIVE_FAILURES.load(Ordering::Relaxed),
 		UPSTREAM_FAILURE_403_HTML.load(Ordering::Relaxed),
 		UPSTREAM_FAILURE_429.load(Ordering::Relaxed),
 		UPSTREAM_FAILURE_PARSE.load(Ordering::Relaxed),
 		UPSTREAM_FAILURE_TRANSPORT.load(Ordering::Relaxed),
-		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed)
+		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed),
+		JSON_COALESCE_LEADER_COUNT.load(Ordering::Relaxed),
+		JSON_COALESCE_FOLLOWER_COUNT.load(Ordering::Relaxed),
+		JSON_COALESCE_BROADCAST_COUNT.load(Ordering::Relaxed),
+		inflight_json_count(),
+		oauth_backend_label(),
+		OAUTH_RATELIMIT_REMAINING.load(Ordering::Relaxed),
+		if OAUTH_IS_ROLLING_OVER.load(Ordering::Relaxed) { "true" } else { "false" }
+	)
+}
+
+fn oauth_backend_label() -> &'static str {
+	match &OAUTH_CLIENT.load().backend {
+		OauthBackendImpl::GenericWeb(_) => "generic_web",
+		OauthBackendImpl::MobileSpoof(_) => "mobile_spoof",
+	}
+}
+
+fn inflight_json_count() -> usize {
+	INFLIGHT_JSON_REQUESTS.lock().map(|m| m.len()).unwrap_or_default()
+}
+
+pub fn upstream_prometheus_metrics() -> String {
+	let circuit_open = if UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed) > now_epoch_secs() {
+		1
+	} else {
+		0
+	};
+	let oauth_backend_is_generic = if oauth_backend_label() == "generic_web" { 1 } else { 0 };
+	format!(
+		concat!(
+			"# TYPE redlib_upstream_success_total counter\n",
+			"redlib_upstream_success_total {}\n",
+			"# TYPE redlib_upstream_failures_total counter\n",
+			"redlib_upstream_failures_total{{type=\"html_403\"}} {}\n",
+			"redlib_upstream_failures_total{{type=\"http_429\"}} {}\n",
+			"redlib_upstream_failures_total{{type=\"parse\"}} {}\n",
+			"redlib_upstream_failures_total{{type=\"transport\"}} {}\n",
+			"# TYPE redlib_upstream_consecutive_failures gauge\n",
+			"redlib_upstream_consecutive_failures {}\n",
+			"# TYPE redlib_upstream_circuit_open gauge\n",
+			"redlib_upstream_circuit_open {}\n",
+			"# TYPE redlib_upstream_circuit_open_until_epoch_seconds gauge\n",
+			"redlib_upstream_circuit_open_until_epoch_seconds {}\n",
+			"# TYPE redlib_json_coalesced_requests_total counter\n",
+			"redlib_json_coalesced_requests_total{{role=\"leader\"}} {}\n",
+			"redlib_json_coalesced_requests_total{{role=\"follower\"}} {}\n",
+			"# TYPE redlib_json_coalesce_broadcasts_total counter\n",
+			"redlib_json_coalesce_broadcasts_total {}\n",
+			"# TYPE redlib_json_coalesce_inflight gauge\n",
+			"redlib_json_coalesce_inflight {}\n",
+			"# TYPE redlib_oauth_ratelimit_remaining gauge\n",
+			"redlib_oauth_ratelimit_remaining {}\n",
+			"# TYPE redlib_oauth_refresh_rolling gauge\n",
+			"redlib_oauth_refresh_rolling {}\n",
+			"# TYPE redlib_oauth_backend_generic_web gauge\n",
+			"redlib_oauth_backend_generic_web {}\n"
+		),
+		UPSTREAM_SUCCESS_COUNT.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_403_HTML.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_429.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_PARSE.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_TRANSPORT.load(Ordering::Relaxed),
+		UPSTREAM_CONSECUTIVE_FAILURES.load(Ordering::Relaxed),
+		circuit_open,
+		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed),
+		JSON_COALESCE_LEADER_COUNT.load(Ordering::Relaxed),
+		JSON_COALESCE_FOLLOWER_COUNT.load(Ordering::Relaxed),
+		JSON_COALESCE_BROADCAST_COUNT.load(Ordering::Relaxed),
+		inflight_json_count(),
+		OAUTH_RATELIMIT_REMAINING.load(Ordering::Relaxed),
+		if OAUTH_IS_ROLLING_OVER.load(Ordering::Relaxed) { 1 } else { 0 },
+		oauth_backend_is_generic
+	)
+}
+
+pub fn upstream_diagnostics_snapshot() -> String {
+	format!(
+		"backend={}; ratelimit_remaining={}; rolling_refresh={}; consecutive_failures={}; circuit_open_until={}; success={}; html_403={}; http_429={}; parse={}; transport={}; coalesce_inflight={}; coalesce_followers={}",
+		oauth_backend_label(),
+		OAUTH_RATELIMIT_REMAINING.load(Ordering::Relaxed),
+		OAUTH_IS_ROLLING_OVER.load(Ordering::Relaxed),
+		UPSTREAM_CONSECUTIVE_FAILURES.load(Ordering::Relaxed),
+		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed),
+		UPSTREAM_SUCCESS_COUNT.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_403_HTML.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_429.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_PARSE.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_TRANSPORT.load(Ordering::Relaxed),
+		inflight_json_count(),
+		JSON_COALESCE_FOLLOWER_COUNT.load(Ordering::Relaxed)
 	)
 }
 
@@ -496,6 +593,43 @@ fn request(method: &'static Method, path: String, redirect: bool, quarantine: bo
 /// Make a request to a Reddit API and parse the JSON response
 #[cached(size = 100, time = 30, result = true)]
 pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
+	let coalesce_key = format!("{}|{}", if quarantine { "q" } else { "n" }, path);
+	let follower_wait = {
+		let mut inflight = INFLIGHT_JSON_REQUESTS.lock().map_err(|_| "JSON coalescing lock poisoned".to_string())?;
+		if let Some(waiters) = inflight.get_mut(&coalesce_key) {
+			let (tx, rx) = oneshot::channel();
+			waiters.push(tx);
+			JSON_COALESCE_FOLLOWER_COUNT.fetch_add(1, Ordering::Relaxed);
+			Some(rx)
+		} else {
+			inflight.insert(coalesce_key.clone(), Vec::new());
+			JSON_COALESCE_LEADER_COUNT.fetch_add(1, Ordering::Relaxed);
+			None
+		}
+	};
+
+	if let Some(rx) = follower_wait {
+		return match rx.await {
+			Ok(result) => result,
+			Err(_) => json_uncached(path, quarantine).await,
+		};
+	}
+
+	let result = json_uncached(path.clone(), quarantine).await;
+	if let Ok(mut inflight) = INFLIGHT_JSON_REQUESTS.lock() {
+		if let Some(waiters) = inflight.remove(&coalesce_key) {
+			if !waiters.is_empty() {
+				JSON_COALESCE_BROADCAST_COUNT.fetch_add(waiters.len() as u32, Ordering::Relaxed);
+			}
+			for tx in waiters {
+				let _ = tx.send(result.clone());
+			}
+		}
+	}
+	result
+}
+
+async fn json_uncached(path: String, quarantine: bool) -> Result<Value, String> {
 	// Fail fast during known upstream brownouts to avoid dogpiling Reddit.
 	if let Some(msg) = upstream_circuit_message(&path) {
 		return Err(msg);

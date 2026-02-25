@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration as StdDuration, Instant};
 use time::{Duration, OffsetDateTime};
 
@@ -69,6 +70,9 @@ struct WallTemplate {
 
 static GEO_FILTER_MATCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"geo_filter=(?<region>\w+)").unwrap());
 static ANON_LISTING_RENDER_CACHE: LazyLock<Mutex<HashMap<String, (Instant, String)>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ANON_LISTING_RENDER_CACHE_HIT: AtomicU32 = AtomicU32::new(0);
+static ANON_LISTING_RENDER_CACHE_MISS: AtomicU32 = AtomicU32::new(0);
+static ANON_LISTING_RENDER_CACHE_STORE: AtomicU32 = AtomicU32::new(0);
 const ANON_LISTING_RENDER_CACHE_TTL: StdDuration = StdDuration::from_secs(12);
 
 fn hashable_settings_signature(req: &Request<Body>) -> String {
@@ -125,6 +129,7 @@ fn render_cache_get(key: &str) -> Option<Response<Body>> {
 	let mut cache = ANON_LISTING_RENDER_CACHE.lock().ok()?;
 	if let Some((inserted, html)) = cache.get(key) {
 		if inserted.elapsed() <= ANON_LISTING_RENDER_CACHE_TTL {
+			ANON_LISTING_RENDER_CACHE_HIT.fetch_add(1, Ordering::Relaxed);
 			return Some(
 				Response::builder()
 					.status(200)
@@ -135,6 +140,7 @@ fn render_cache_get(key: &str) -> Option<Response<Body>> {
 			);
 		}
 	}
+	ANON_LISTING_RENDER_CACHE_MISS.fetch_add(1, Ordering::Relaxed);
 	cache.remove(key);
 	None
 }
@@ -145,7 +151,33 @@ fn render_cache_put(key: &str, html: String) {
 			cache.retain(|_, (t, _)| t.elapsed() <= ANON_LISTING_RENDER_CACHE_TTL);
 		}
 		cache.insert(key.to_string(), (Instant::now(), html));
+		ANON_LISTING_RENDER_CACHE_STORE.fetch_add(1, Ordering::Relaxed);
 	}
+}
+
+pub fn render_cache_metrics_snapshot() -> (u32, u32, u32, usize) {
+	(
+		ANON_LISTING_RENDER_CACHE_HIT.load(Ordering::Relaxed),
+		ANON_LISTING_RENDER_CACHE_MISS.load(Ordering::Relaxed),
+		ANON_LISTING_RENDER_CACHE_STORE.load(Ordering::Relaxed),
+		ANON_LISTING_RENDER_CACHE.lock().map(|c| c.len()).unwrap_or_default(),
+	)
+}
+
+pub fn render_cache_prometheus_metrics() -> String {
+	let (hit, miss, store, size) = render_cache_metrics_snapshot();
+	format!(
+		concat!(
+			"# TYPE redlib_render_cache_requests_total counter\n",
+			"redlib_render_cache_requests_total{{result=\"hit\"}} {}\n",
+			"redlib_render_cache_requests_total{{result=\"miss\"}} {}\n",
+			"# TYPE redlib_render_cache_store_total counter\n",
+			"redlib_render_cache_store_total {}\n",
+			"# TYPE redlib_render_cache_entries gauge\n",
+			"redlib_render_cache_entries {}\n"
+		),
+		hit, miss, store, size
+	)
 }
 
 // SERVICES

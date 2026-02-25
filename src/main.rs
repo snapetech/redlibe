@@ -11,7 +11,9 @@ use futures_lite::FutureExt;
 use hyper::Uri;
 use hyper::{header::HeaderValue, Body, Request, Response};
 use log::{info, warn};
-use redlib::client::{canonical_path, proxy, rate_limit_check, upstream_metrics_snapshot_json, CLIENT};
+use redlib::client::{
+	canonical_path, proxy, rate_limit_check, upstream_diagnostics_snapshot, upstream_metrics_snapshot_json, upstream_prometheus_metrics, CLIENT,
+};
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
 use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, submit, subreddit, user, vote};
@@ -89,6 +91,98 @@ async fn resource(body: &str, content_type: &str, cache: bool) -> Result<Respons
 	}
 
 	Ok(res)
+}
+
+fn html_escape(s: &str) -> String {
+	s.replace('&', "&amp;")
+		.replace('<', "&lt;")
+		.replace('>', "&gt;")
+		.replace('"', "&quot;")
+}
+
+async fn prometheus_metrics() -> Result<Response<Body>, String> {
+	let mut body = upstream_prometheus_metrics();
+	body.push_str(&subreddit::render_cache_prometheus_metrics());
+	Ok(
+		Response::builder()
+			.status(200)
+			.header("content-type", "text/plain; version=0.0.4; charset=utf-8")
+			.header("Cache-Control", "no-store")
+			.body(body.into())
+			.unwrap_or_default(),
+	)
+}
+
+async fn upstream_diagnostics_page() -> Result<Response<Body>, String> {
+	let upstream_json = upstream_metrics_snapshot_json();
+	let upstream_diag = upstream_diagnostics_snapshot();
+	let (hits, misses, stores, entries) = subreddit::render_cache_metrics_snapshot();
+	let total = hits + misses;
+	let hit_ratio = if total == 0 {
+		0.0
+	} else {
+		(hits as f64 / total as f64) * 100.0
+	};
+	let html = format!(
+		r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redlibe Diagnostics</title>
+<style>
+body{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#161412;color:#efe7dd;margin:0;padding:1.25rem;}}
+.wrap{{max-width:960px;margin:0 auto;display:grid;gap:1rem;}}
+.card{{background:#211d19;border:1px solid #3a322b;border-radius:12px;padding:1rem;}}
+h1,h2{{margin:0 0 .6rem 0;}}
+pre{{white-space:pre-wrap;word-break:break-word;background:#130f0c;border-radius:8px;padding:.8rem;border:1px solid #302821;}}
+a{{color:#f3bf7a}}
+.row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}}
+.stat{{background:#191511;border:1px solid #2f2923;border-radius:10px;padding:.75rem}}
+.label{{opacity:.8;font-size:.85rem}}
+.value{{font-size:1.05rem;margin-top:.15rem}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<h1>Redlibe Upstream Diagnostics</h1>
+<div class="row">
+<div class="stat"><div class="label">Render Cache Hit Ratio</div><div class="value">{:.1}%</div></div>
+<div class="stat"><div class="label">Render Cache Hits/Misses</div><div class="value">{}/{} </div></div>
+<div class="stat"><div class="label">Render Cache Entries</div><div class="value">{}</div></div>
+<div class="stat"><div class="label">Render Cache Stores</div><div class="value">{}</div></div>
+</div>
+<div class="card">
+<h2>OAuth / Token Refresh Status</h2>
+<pre>{}</pre>
+</div>
+<div class="card">
+<h2>Upstream Counters (JSON)</h2>
+<pre>{}</pre>
+</div>
+<div class="card">
+<h2>Links</h2>
+<p><a href="/upstream-metrics.json">/upstream-metrics.json</a> · <a href="/metrics">/metrics</a> · <a href="/settings">/settings</a></p>
+</div>
+</main>
+</body>
+</html>"#,
+		hit_ratio,
+		hits,
+		misses,
+		entries,
+		stores,
+		html_escape(&upstream_diag),
+		html_escape(&upstream_json)
+	);
+	Ok(
+		Response::builder()
+			.status(200)
+			.header("content-type", "text/html; charset=utf-8")
+			.header("Cache-Control", "no-store")
+			.body(html.into())
+			.unwrap_or_default(),
+	)
 }
 
 async fn style() -> Result<Response<Body>, String> {
@@ -274,6 +368,8 @@ async fn main() {
 				.unwrap_or_default(),
 		)
 	}.boxed());
+	app.at("/metrics").get(|_| prometheus_metrics().boxed());
+	app.at("/diagnostics/upstream").get(|_| upstream_diagnostics_page().boxed());
 
 	app.at("/commits.atom").get(|_| async move { proxy_commit_info().await }.boxed());
 	app.at("/instances.json").get(|_| async move { proxy_instances().await }.boxed());
