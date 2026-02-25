@@ -1,8 +1,8 @@
 // @license http://www.gnu.org/licenses/agpl-3.0.html AGPL-3.0
 (function () {
     const configElement = document.getElementById('video_quality');
-    const qualitySetting = configElement.getAttribute('data-value');
-    if (Hls.isSupported()) {
+    const qualitySetting = (configElement && (configElement.getAttribute('data-value') || configElement.getAttribute('content'))) || 'best';
+    if (typeof Hls !== "undefined" && Hls.isSupported()) {
         var videoSources = document.querySelectorAll("video source[type='application/vnd.apple.mpegurl']");
         videoSources.forEach(function (source) {
             var playlist = source.src;
@@ -49,6 +49,10 @@
                 hls.loadSource(playlist);
                 hls.attachMedia(newVideo);
                 hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                    if (!hls.levels || hls.levels.length === 0) {
+                        hls.startLoad();
+                        return;
+                    }
                     hls.loadLevel = getIndexOfDefault(hls.levels.length);
                     var availableLevels = hls.levels.map(function(level) {
                         return {
@@ -106,6 +110,9 @@
                     hlsInstance.startLoad();
                 });
 
+                if (availableLevels.length <= 1) {
+                    return;
+                }
                 videoElement.parentNode.appendChild(qualitySelector);
             }
 

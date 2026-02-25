@@ -38,6 +38,18 @@
 - Vote state reflected in the UI (no direct browser-to-Reddit requests)
 - Requires a logged-in session
 
+### Inbox, private messages, and compose
+- **Inbox page** (`/inbox`) for inbox / unread / sent tabs
+- **Private messages** — compose and send from Redlib UI (`/inbox/compose`)
+- **Mark read / mark all read** actions for message workflows
+- Responsive message cards and improved mobile-friendly inbox layout
+
+### UI/UX and theme system improvements
+- Refined inbox/message/compose surfaces with responsive card layouts
+- Improved navbar and search responsiveness on smaller screens
+- Upgraded settings UX with searchable controls, better form layout, and visual theme previews
+- Expanded preset theme catalog (42 total themes), including more medium-dark, brown, sepia, olive, and light palettes
+
 ### SSH session import
 
 You can sign in by importing the Reddit session cookie from a browser on a machine you can SSH into. No Reddit OAuth app is required.
@@ -81,8 +93,8 @@ kubectl create secret generic redlibe-ssh-key -n redlibe --from-file=ssh-private
 - **Custom feeds** — Create named multireddits (e.g. “Tech” = rust + programming + linux) from **Feeds → Manage feeds** or `/feeds`. They appear in the Feeds menu and at `/feed/YourFeedName`. Stored in a cookie; create, edit, and delete from the manage page.
 
 ### Planned / In Progress (see [feature gap backlog](docs/FEATURE_GAP_BACKLOG.md))
-- **Must-have:** Post submission (text/link/image), edit/delete own content, saved/upvoted/hidden listing pages, Reddit subscriptions in Feeds, inbox + private messages
-- **Nice-to-have:** Multiple accounts, hide read / keyword filters, media download/share, search UX, custom theme editor
+- **Must-have:** Post submission (text/link/image), edit/delete own content, saved/upvoted/hidden listing pages, Reddit subscriptions in Feeds
+- **Nice-to-have:** Multiple accounts, media download/share, custom theme editor
 - Subreddit subscription management (API done; UX to pull Reddit subs into nav), user flair display, moderation queue (basic)
 
 ---
@@ -141,6 +153,37 @@ cargo build --release
 
 ```bash
 docker compose up -d
+```
+
+### Build image used by the `redlibe` deployment (local source build)
+
+This repo includes a deploy-oriented image build script that compiles the local Rust source and produces `redlibe:latest`:
+
+```bash
+./build-docker.sh
+```
+
+Notes:
+- Uses `Dockerfile.ubuntu` (builds the local source in a Rust builder stage, then copies the binary into an Ubuntu runtime image).
+- Uses `--network=host` to avoid DNS/index resolution issues during crate downloads on some home-lab setups.
+
+### k3s rollout for `redlibe.home` (host-local image, `imagePullPolicy: IfNotPresent`)
+
+If your `redlibe` deployment uses `redlibe:latest` with `IfNotPresent`, restarting the deployment is not enough. You must import the rebuilt image into k3s containerd on the node first.
+
+Example flow on host `kspld0`:
+
+```bash
+# Build on the node (from this repo)
+cd /home/keith/Documents/code/redlib-extended
+./build-docker.sh
+
+# Import Docker image into k3s containerd
+docker save redlibe:latest | sudo k3s ctr images import -
+
+# Roll the deployment
+KUBECONFIG=~/.kube/config kubectl -n redlibe rollout restart deployment/redlibe
+KUBECONFIG=~/.kube/config kubectl -n redlibe rollout status deployment/redlibe
 ```
 
 ---
