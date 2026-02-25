@@ -73,9 +73,10 @@ pub struct Oauth {
 impl Oauth {
 	/// Create a new OAuth client
 	pub(crate) async fn new() -> Self {
-		// Try MobileSpoofAuth first, then fall back to GenericWebAuth
+		// Prefer GenericWebAuth first; MobileSpoof has been more brittle when Reddit
+		// changes Android client validation. Fall back to MobileSpoof if needed.
 		let mut failure_count = 0;
-		let mut backend = OauthBackendImpl::MobileSpoof(MobileSpoofAuth::new());
+		let mut backend = OauthBackendImpl::GenericWeb(GenericWebAuth::new());
 
 		loop {
 			let attempt = Self::new_with_timeout_with_backend(backend.clone()).await;
@@ -101,10 +102,10 @@ impl Oauth {
 
 			failure_count += 1;
 
-			// Switch to GenericWeb after 5 failures with MobileSpoof
-			if matches!(backend, OauthBackendImpl::MobileSpoof(_)) && failure_count >= 5 {
-				warn!("[🔄] MobileSpoofAuth failed 5 times. Falling back to GenericWebAuth...");
-				backend = OauthBackendImpl::GenericWeb(GenericWebAuth::new());
+			// Switch to MobileSpoof after 5 failures with GenericWeb
+			if matches!(backend, OauthBackendImpl::GenericWeb(_)) && failure_count >= 5 {
+				warn!("[🔄] GenericWebAuth failed 5 times. Falling back to MobileSpoofAuth...");
+				backend = OauthBackendImpl::MobileSpoof(MobileSpoofAuth::new());
 			}
 
 			// Crash after 10 total failures
