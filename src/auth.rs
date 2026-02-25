@@ -408,6 +408,8 @@ pub fn decrypt_vault(encoded: &str) -> Option<SessionVault> {
 	serde_json::from_slice(&plaintext).ok()
 }
 
+const AUTH_LANDING_PATH: &str = "/settings";
+
 /// Add a new session to the vault and return a response with updated cookies.
 /// Sets the new session as active.
 pub fn add_session_to_vault(session: SessionData) -> Result<Response<Body>, String> {
@@ -415,7 +417,7 @@ pub fn add_session_to_vault(session: SessionData) -> Result<Response<Body>, Stri
 	vault.add(session.clone());
 
 	let encrypted = encrypt_vault(&vault).ok_or("Failed to encrypt session vault")?;
-	let mut response = redirect("/");
+	let mut response = redirect(AUTH_LANDING_PATH);
 	response.insert_cookie(
 		Cookie::build((session_cookie_name(), encrypted))
 			.path("/")
@@ -448,7 +450,7 @@ pub fn switch_active_session(username: &str, vault_cookie: Option<&str>) -> Resu
 		}
 	}
 
-	let mut response = redirect("/");
+	let mut response = redirect(AUTH_LANDING_PATH);
 	response.insert_cookie(
 		Cookie::build((active_session_cookie_name(), username.to_string()))
 			.path("/")
@@ -471,7 +473,7 @@ pub fn remove_session_from_vault(username: &str, vault_cookie: Option<&str>) -> 
 	vault.remove(username);
 
 	let encrypted = encrypt_vault(&vault).ok_or("Failed to encrypt session vault")?;
-	let mut response = redirect("/");
+	let mut response = redirect(AUTH_LANDING_PATH);
 	response.insert_cookie(
 		Cookie::build((session_cookie_name(), encrypted))
 			.path("/")
@@ -561,11 +563,11 @@ pub fn validate_csrf_token(auth: &AuthContext, submitted: &str) -> Result<(), St
 // ----- OAuth routes -----
 
 /// `GET /login` — show the login choice page (Reddit OAuth or SSH import).
-/// Redirects to `/` if already authenticated.
+/// Redirects to `/settings` if already authenticated.
 pub async fn login_page(req: Request<Body>) -> Result<Response<Body>, String> {
 	let auth = AuthContext::from_request(&req);
 	if auth.is_authenticated() {
-		return Ok(redirect("/"));
+		return Ok(redirect(AUTH_LANDING_PATH));
 	}
 	let prefs = Preferences::new(&req);
 	let page = LoginPage {
@@ -762,7 +764,7 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			};
 
 			let encrypted = encrypt_session(&session).ok_or("Failed to encrypt session data")?;
-			let mut response = redirect("/");
+			let mut response = redirect(AUTH_LANDING_PATH);
 			response.insert_cookie(
 				Cookie::build((session_cookie_name(), encrypted))
 					.path("/")
@@ -1217,7 +1219,7 @@ pub async fn logout(req: Request<Body>) -> Result<Response<Body>, String> {
 		return remove_session_from_vault(&username, vault_cookie.as_deref());
 	}
 
-	let mut response = redirect("/");
+	let mut response = redirect(AUTH_LANDING_PATH);
 	response.remove_cookie(session_cookie_name().to_string());
 	response.remove_cookie(active_session_cookie_name().to_string());
 	response.remove_cookie(subscriptions_cookie_name().to_string());
