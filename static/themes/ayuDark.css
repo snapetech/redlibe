@@ -1,0 +1,15 @@
+/* Ayu Dark theme setting */
+.ayuDark {
+	--accent: #ffcc66;
+	--green: #aad94c;
+	--text: #e6e1cf;
+	--foreground: #0f1419;
+	--background: #0b0e14;
+	--outside: #11151c;
+	--post: #0f1419;
+	--panel-border: 1px solid #27323f;
+	--highlighted: #1a212b;
+	--visited: #8a9199;
+	--muted: #8a9199;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}

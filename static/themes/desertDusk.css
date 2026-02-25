@@ -1,0 +1,15 @@
+/* Desert Dusk theme setting */
+.desertDusk {
+	--accent: #e6b673;
+	--green: #9bc27f;
+	--text: #efe2c7;
+	--foreground: #30261f;
+	--background: #2a221d;
+	--outside: #3a2f27;
+	--post: #332920;
+	--panel-border: 1px solid #56463a;
+	--highlighted: #493b31;
+	--visited: #c4b396;
+	--muted: #c4b396;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}

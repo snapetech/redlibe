@@ -7,26 +7,55 @@
 
 {% block body %}
 <main>
-	<div id="column_one">
-		<h1>Inbox</h1>
-		<div class="inbox_tabs">
-			<a href="/inbox" {% if tab == "inbox" %}class="selected"{% endif %}>All</a>
-			<a href="/inbox?tab=unread" {% if tab == "unread" %}class="selected"{% endif %}>Unread</a>
-			<a href="/inbox?tab=sent" {% if tab == "sent" %}class="selected"{% endif %}>Sent</a>
-			<a href="/inbox/compose" class="compose_link">Compose</a>
-		</div>
+	<div id="column_one" class="inbox_page">
+		<header class="inbox_page_header">
+			<div>
+				<p class="section_kicker">Messages</p>
+				<h1>Inbox</h1>
+			</div>
+			<div class="inbox_toolbar">
+				<div class="inbox_tabs" aria-label="Inbox tabs">
+					<a href="/inbox" {% if tab == "inbox" %}class="selected"{% endif %}>All</a>
+					<a href="/inbox?tab=unread" {% if tab == "unread" %}class="selected"{% endif %}>Unread</a>
+					<a href="/inbox?tab=sent" {% if tab == "sent" %}class="selected"{% endif %}>Sent</a>
+				</div>
+				<div class="inbox_tab_actions">
+					<a href="/inbox/compose" class="compose_link">Compose</a>
+					{% if tab != "sent" %}
+					<form method="POST" action="/inbox/read-all">
+						<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+						<button type="submit" class="mark_all_read">Mark all read</button>
+					</form>
+					{% endif %}
+				</div>
+			</div>
+		</header>
 		<div class="inbox_list">
 			{% if messages.is_empty() %}
-			<p>No messages.</p>
+			<p class="inbox_empty">No messages.</p>
 			{% else %}
 			{% for msg in messages %}
 			<article class="inbox_message {% if msg.new %}unread{% endif %}">
-				<p class="inbox_header">
-					<span class="inbox_subject">{{ msg.subject }}</span>
-					<span class="inbox_meta">from u/{{ msg.author }} · {{ msg.created }}</span>
-				</p>
+				<header class="inbox_header">
+					<div class="inbox_subject_row">
+						{% if msg.new %}<span class="inbox_badge">New</span>{% endif %}
+						<span class="inbox_subject">{{ msg.subject }}</span>
+					</div>
+					<span class="inbox_meta">u/{{ msg.author }} · {{ msg.created }}</span>
+				</header>
 				<p class="inbox_preview">{{ msg.body_preview }}</p>
-				<a href="https://www.reddit.com/message/messages/{{ msg.id }}" rel="nofollow" class="inbox_link">View on Reddit</a>
+				<div class="inbox_actions">
+					<div class="inbox_primary_actions">
+						{% if msg.new %}
+						<form method="POST" action="/inbox/read">
+							<input type="hidden" name="id" value="{{ msg.fullname }}">
+							<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+							<button type="submit" class="mark_read">Mark read</button>
+						</form>
+						{% endif %}
+					</div>
+					<a href="https://www.reddit.com/message/messages/{{ msg.id }}" rel="nofollow" class="inbox_link">View on Reddit</a>
+				</div>
 			</article>
 			{% endfor %}
 			{% endif %}

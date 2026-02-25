@@ -1,0 +1,15 @@
+/* Cocoa Dusk theme setting */
+.cocoaDusk {
+	--accent: #c98f58;
+	--green: #7fb38a;
+	--text: #e7d7cb;
+	--foreground: #2b211f;
+	--background: #231b19;
+	--outside: #332826;
+	--post: #2b211f;
+	--panel-border: 1px solid #4a3a36;
+	--highlighted: #3c302d;
+	--visited: #bca49a;
+	--muted: #bca49a;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

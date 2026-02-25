@@ -27,10 +27,7 @@ pub struct InboxMessage {
 }
 
 fn val(v: &Value, key: &str) -> String {
-	v.get(key)
-		.and_then(|x| x.as_str())
-		.unwrap_or_default()
-		.to_string()
+	v.get(key).and_then(|x| x.as_str()).unwrap_or_default().to_string()
 }
 
 fn parse_inbox_listing(json: &Value) -> Vec<InboxMessage> {
@@ -153,9 +150,7 @@ pub async fn compose_post(req: Request<Body>) -> Result<Response<Body>, String> 
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large.".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 	let submitted_csrf = form.get("csrf_token").map(|s| s.as_str()).unwrap_or("");
 	validate_csrf_token(&auth, submitted_csrf)?;
 	let to = form.get("to").map(|s| s.trim()).unwrap_or("");
@@ -201,6 +196,51 @@ pub async fn compose_post(req: Request<Body>) -> Result<Response<Body>, String> 
 			return Ok(res);
 		}
 	}
+	let mut res = redirect("/inbox");
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
+}
+
+/// POST /inbox/read — mark a message as read.
+/// Form: id=t1_xxx (fullname of the message)
+pub async fn read_message(req: Request<Body>) -> Result<Response<Body>, String> {
+	let auth = AuthContext::from_request(&req);
+	if !auth.is_authenticated() {
+		return Err("You must be logged in to read messages.".to_string());
+	}
+
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_BODY_SIZE {
+		return Err("Request body too large.".to_string());
+	}
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+
+	let id = form.get("id").map(|s| s.trim()).unwrap_or("");
+	if id.is_empty() {
+		return Err("Message ID is required.".to_string());
+	}
+
+	let body_str = format!("id={}", percent_encoding::utf8_percent_encode(id, percent_encoding::NON_ALPHANUMERIC));
+	let (_, session_updated) = authed_post("/api/read_message".to_string(), body_str, &auth).await?;
+
+	let mut res = redirect("/inbox");
+	if let Some(s) = session_updated {
+		update_session_cookie(&mut res, &s);
+	}
+	Ok(res)
+}
+
+/// POST /inbox/read-all — mark all messages as read.
+pub async fn read_all(req: Request<Body>) -> Result<Response<Body>, String> {
+	let auth = AuthContext::from_request(&req);
+	if !auth.is_authenticated() {
+		return Err("You must be logged in to read messages.".to_string());
+	}
+
+	let (_, session_updated) = authed_post("/api/read_all_messages".to_string(), String::new(), &auth).await?;
+
 	let mut res = redirect("/inbox");
 	if let Some(s) = session_updated {
 		update_session_cookie(&mut res, &s);

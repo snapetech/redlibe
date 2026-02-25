@@ -1,0 +1,15 @@
+/* One Dark theme setting */
+.oneDark {
+	--accent: #61afef;
+	--green: #98c379;
+	--text: #abb2bf;
+	--foreground: #21252b;
+	--background: #1e2228;
+	--outside: #282c34;
+	--post: #21252b;
+	--panel-border: 1px solid #3b4048;
+	--highlighted: #2f343d;
+	--visited: #8c92a0;
+	--muted: #8c92a0;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}

@@ -1,0 +1,15 @@
+/* Charcoal Olive theme setting */
+.charcoalOlive {
+	--accent: #b7b06f;
+	--green: #8ab17d;
+	--text: #d9ddcf;
+	--foreground: #1d211d;
+	--background: #171a16;
+	--outside: #242a23;
+	--post: #1c211d;
+	--panel-border: 1px solid #384036;
+	--highlighted: #2b332b;
+	--visited: #a7afa0;
+	--muted: #a7afa0;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

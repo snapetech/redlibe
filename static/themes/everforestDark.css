@@ -1,0 +1,15 @@
+/* Everforest Dark theme setting */
+.everforestDark {
+	--accent: #a7c080;
+	--green: #83c092;
+	--text: #d3c6aa;
+	--foreground: #2d353b;
+	--background: #232a2e;
+	--outside: #2d353b;
+	--post: #272e33;
+	--panel-border: 1px solid #414b50;
+	--highlighted: #374145;
+	--visited: #9da9a0;
+	--muted: #9da9a0;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}

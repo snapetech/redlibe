@@ -142,7 +142,6 @@ pub struct Config {
 	pub(crate) user_agent: Option<String>,
 
 	// --- Extended auth config (redlib-extended) ---
-
 	/// Reddit OAuth app client ID (user-registered app for real login flow).
 	#[serde(rename = "REDLIB_OAUTH_CLIENT_ID")]
 	pub(crate) oauth_client_id: Option<String>,
@@ -178,7 +177,6 @@ pub struct Config {
 	pub(crate) secure_cookies: Option<String>,
 
 	// --- SSH browser-token import (redlib-extended) ---
-
 	/// SSH hostname (or alias) of the machine running the browser whose session
 	/// to import. Pre-fills the login page form. Default: `kspld0`.
 	#[serde(rename = "REDLIB_SSH_HOST")]
@@ -192,6 +190,17 @@ pub struct Config {
 	/// Default: `~/.ssh/id_ed25519`.
 	#[serde(rename = "REDLIB_SSH_KEY")]
 	pub(crate) ssh_key: Option<String>,
+
+	/// SSH connection timeout in seconds. Default: `15`.
+	#[serde(rename = "REDLIB_SSH_TIMEOUT")]
+	pub(crate) ssh_timeout: Option<String>,
+
+	/// Whether to verify SSH host keys. When disabled (default), new hosts are
+	/// automatically added to known_hosts. When enabled, strict host key checking
+	/// is used — the host must already be in known_hosts or connection will fail.
+	/// Default: `false` (accept-new).
+	#[serde(rename = "REDLIB_SSH_STRICT_HOST_KEY_CHECKING")]
+	pub(crate) ssh_strict_host_key_checking: Option<String>,
 }
 
 impl Config {
@@ -251,6 +260,8 @@ impl Config {
 			ssh_host: parse("REDLIB_SSH_HOST"),
 			ssh_user: parse("REDLIB_SSH_USER"),
 			ssh_key: parse("REDLIB_SSH_KEY"),
+			ssh_timeout: parse("REDLIB_SSH_TIMEOUT"),
+			ssh_strict_host_key_checking: parse("REDLIB_SSH_STRICT_HOST_KEY_CHECKING"),
 		}
 	}
 }
@@ -292,6 +303,8 @@ fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {
 		"REDLIB_SSH_HOST" => config.ssh_host.clone(),
 		"REDLIB_SSH_USER" => config.ssh_user.clone(),
 		"REDLIB_SSH_KEY" => config.ssh_key.clone(),
+		"REDLIB_SSH_TIMEOUT" => config.ssh_timeout.clone(),
+		"REDLIB_SSH_STRICT_HOST_KEY_CHECKING" => config.ssh_strict_host_key_checking.clone(),
 		_ => None,
 	}
 }

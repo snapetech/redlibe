@@ -1,0 +1,15 @@
+/* Dusk Blue theme setting */
+.duskBlue {
+	--accent: #78a6ff;
+	--green: #78c7a4;
+	--text: #d9e1f2;
+	--foreground: #171d2a;
+	--background: #121722;
+	--outside: #1c2434;
+	--post: #171d2a;
+	--panel-border: 1px solid #2d3a51;
+	--highlighted: #253149;
+	--visited: #9eabc4;
+	--muted: #9eabc4;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

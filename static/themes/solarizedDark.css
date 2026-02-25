@@ -1,0 +1,15 @@
+/* Solarized Dark theme setting */
+.solarizedDark {
+	--accent: #2aa198;
+	--green: #859900;
+	--text: #93a1a1;
+	--foreground: #002b36;
+	--background: #00212b;
+	--outside: #073642;
+	--post: #002b36;
+	--panel-border: 1px solid #244650;
+	--highlighted: #0a4a57;
+	--visited: #839496;
+	--muted: #839496;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

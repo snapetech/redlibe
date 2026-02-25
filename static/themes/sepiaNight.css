@@ -1,0 +1,15 @@
+/* Sepia Night theme setting */
+.sepiaNight {
+	--accent: #c88b3a;
+	--green: #8fb573;
+	--text: #e6d9bf;
+	--foreground: #221b14;
+	--background: #1a140f;
+	--outside: #2a2119;
+	--post: #201811;
+	--panel-border: 1px solid #443529;
+	--highlighted: #372b20;
+	--visited: #baa98c;
+	--muted: #baa98c;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}

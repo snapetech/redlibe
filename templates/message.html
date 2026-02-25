@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block sortstyle %}{% endblock %}
+{% block body_extra_class %}card{% endblock %}
 {% block content %}
-	<div id="message">
-		<h1>{{ title }}</h1>
-		<br>
-		{{ body|safe }}
+	<div id="column_one" class="message_shell">
+		<section id="message" class="message_panel">
+			<h1>{{ title }}</h1>
+			<div class="message_body">{{ body|safe }}</div>
+		</section>
 	</div>
 {% endblock %}

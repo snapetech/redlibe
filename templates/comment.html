@@ -69,7 +69,10 @@
 				<input type="hidden" name="parent" value="t1_{{ id }}">
 				<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
 				<input type="hidden" name="return_to" value="{{ post_link }}{{ id }}/">
-				<textarea name="text" rows="4" placeholder="Write your reply..." required maxlength="10000"></textarea>
+				<div class="textarea-wrapper">
+					<textarea name="text" rows="4" placeholder="Write your reply..." required maxlength="10000"></textarea>
+					<button type="button" class="emoji-btn" title="Add emoji">😀</button>
+				</div>
 				<div class="reply_form_actions">
 					<button type="submit" class="submit">Post reply</button>
 					<button type="button" class="reply_cancel_btn">Cancel</button>

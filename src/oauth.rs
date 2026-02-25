@@ -258,13 +258,13 @@ impl OauthBackend for MobileSpoofAuth {
 		// It's some kind of header that uniquely identifies the device.
 		// Not worried about the privacy implications, since this is randomly changed
 		// and really only as privacy-concerning as the OAuth token itself.
-		if let Some(header) = resp.headers().get("x-reddit-loid") {
-			self.additional_headers.insert("x-reddit-loid".to_owned(), header.to_str().unwrap().to_string());
+		if let Some(header) = resp.headers().get("x-reddit-loid").and_then(|h| h.to_str().ok()) {
+			self.additional_headers.insert("x-reddit-loid".to_owned(), header.to_string());
 		}
 
 		// Same with x-reddit-session
-		if let Some(header) = resp.headers().get("x-reddit-session") {
-			self.additional_headers.insert("x-reddit-session".to_owned(), header.to_str().unwrap().to_string());
+		if let Some(header) = resp.headers().get("x-reddit-session").and_then(|h| h.to_str().ok()) {
+			self.additional_headers.insert("x-reddit-session".to_owned(), header.to_string());
 		}
 
 		trace!("Serializing response...");
@@ -375,13 +375,13 @@ impl OauthBackend for GenericWebAuth {
 		// It's some kind of header that uniquely identifies the device.
 		// Not worried about the privacy implications, since this is randomly changed
 		// and really only as privacy-concerning as the OAuth token itself.
-		if let Some(header) = resp.headers().get("x-reddit-loid") {
-			self.additional_headers.insert("x-reddit-loid".to_owned(), header.to_str().unwrap().to_string());
+		if let Some(header) = resp.headers().get("x-reddit-loid").and_then(|h| h.to_str().ok()) {
+			self.additional_headers.insert("x-reddit-loid".to_owned(), header.to_string());
 		}
 
 		// Same with x-reddit-session
-		if let Some(header) = resp.headers().get("x-reddit-session") {
-			self.additional_headers.insert("x-reddit-session".to_owned(), header.to_str().unwrap().to_string());
+		if let Some(header) = resp.headers().get("x-reddit-session").and_then(|h| h.to_str().ok()) {
+			self.additional_headers.insert("x-reddit-session".to_owned(), header.to_string());
 		}
 
 		trace!("Serializing GenericWebAuth response...");

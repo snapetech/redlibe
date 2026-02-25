@@ -474,11 +474,7 @@ impl Post {
 	}
 
 	/// Fetch listing with auth (for saved/upvoted/hidden). Returns (posts, after) and optional session update.
-	pub async fn fetch_authed(
-		path: &str,
-		quarantine: bool,
-		auth: &AuthContext,
-	) -> Result<((Vec<Self>, String), Option<crate::auth::SessionData>), String> {
+	pub async fn fetch_authed(path: &str, quarantine: bool, auth: &AuthContext) -> Result<((Vec<Self>, String), Option<crate::auth::SessionData>), String> {
 		let (res, session_updated) = authed_json(path.to_string(), quarantine, auth).await?;
 		let (posts, after) = Self::parse_listing(&res).await?;
 		Ok(((posts, after), session_updated))
@@ -652,10 +648,7 @@ pub struct CustomFeed {
 }
 
 fn custom_feed_link(name: &str) -> String {
-	format!(
-		"/feed/{}",
-		percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC)
-	)
+	format!("/feed/{}", percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC))
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -800,14 +793,9 @@ impl Preferences {
 
 		// When logged in, prefer Reddit account subscriptions (set at login); otherwise use cookie list
 		let subscriptions: Vec<String> = if logged_in {
-			req.cookie("reddit_subscriptions")
-				.map(|c| {
-					c.value()
-						.split('+')
-						.map(|s| s.to_string())
-						.filter(|s| !s.is_empty())
-						.collect()
-				})
+			req
+				.cookie("reddit_subscriptions")
+				.map(|c| c.value().split('+').map(|s| s.to_string()).filter(|s| !s.is_empty()).collect())
 				.unwrap_or_else(|| setting(req, "subscriptions").split('+').map(String::from).filter(|s| !s.is_empty()).collect())
 		} else {
 			setting(req, "subscriptions").split('+').map(String::from).filter(|s| !s.is_empty()).collect()
@@ -974,7 +962,8 @@ pub struct SavedSearch {
 
 pub fn get_saved_searches(req: &Request<Body>) -> Vec<SavedSearch> {
 	let raw = setting(req, "saved_searches");
-	raw.split('\n')
+	raw
+		.split('\n')
 		.map(|s| s.trim())
 		.filter(|s| !s.is_empty())
 		.take(SAVED_SEARCHES_MAX)
@@ -1003,17 +992,10 @@ pub fn saved_searches_cookie_value_after_save(req: &Request<Body>, label: &str, 
 	}
 	let label = label.trim().chars().take(SAVED_SEARCH_LABEL_MAX).collect::<String>();
 	let existing = get_saved_searches(req);
-	let mut list: Vec<(String, String)> = existing
-		.into_iter()
-		.map(|s| (s.label, s.query))
-		.filter(|(_, q)| q != &query)
-		.collect();
+	let mut list: Vec<(String, String)> = existing.into_iter().map(|s| (s.label, s.query)).filter(|(_, q)| q != &query).collect();
 	list.insert(0, (label, query.clone()));
 	list.truncate(SAVED_SEARCHES_MAX);
-	list.iter()
-		.map(|(l, q)| format!("{}|{}", l, q))
-		.collect::<Vec<_>>()
-		.join("\n")
+	list.iter().map(|(l, q)| format!("{}|{}", l, q)).collect::<Vec<_>>().join("\n")
 }
 
 /// New cookie value after removing a saved search by query.
@@ -1044,10 +1026,7 @@ pub fn saved_searches_cookie_value_after_save_raw(current: &str, label: &str, qu
 	let mut list: Vec<(String, String)> = existing.into_iter().filter(|(_, q)| q != &query).collect();
 	list.insert(0, (label, query));
 	list.truncate(SAVED_SEARCHES_MAX);
-	list.iter()
-		.map(|(l, q)| format!("{}|{}", l, q))
-		.collect::<Vec<_>>()
-		.join("\n")
+	list.iter().map(|(l, q)| format!("{}|{}", l, q)).collect::<Vec<_>>().join("\n")
 }
 
 /// Like saved_searches_cookie_value_after_unsave but takes current cookie string.
@@ -1075,7 +1054,8 @@ pub fn saved_searches_cookie_value_after_unsave_raw(current: &str, query: &str) 
 
 pub fn get_recent_searches(req: &Request<Body>) -> Vec<String> {
 	let raw = setting(req, "recent_searches");
-	raw.split('\n')
+	raw
+		.split('\n')
 		.map(|s| s.trim().to_string())
 		.filter(|s| !s.is_empty())
 		.take(RECENT_SEARCHES_MAX)
@@ -1084,13 +1064,8 @@ pub fn get_recent_searches(req: &Request<Body>) -> Vec<String> {
 
 /// Build cookie value for recent searches after prepending a new query (caller sets cookie on response).
 pub fn recent_searches_cookie_value(req: &Request<Body>, new_query: &str) -> String {
-	let sanitized = new_query
-		.trim()
-		.replace('\n', " ");
-	let sanitized = sanitized
-		.chars()
-		.take(RECENT_SEARCHES_MAX_LEN)
-		.collect::<String>();
+	let sanitized = new_query.trim().replace('\n', " ");
+	let sanitized = sanitized.chars().take(RECENT_SEARCHES_MAX_LEN).collect::<String>();
 	if sanitized.is_empty() {
 		return String::new();
 	}
@@ -1123,12 +1098,7 @@ pub fn filter_media_only(posts: &mut Vec<Post>) {
 }
 
 /// Removes posts that match any keyword (in title or body), flair, or domain filter.
-pub fn filter_posts_by_content(
-	posts: &mut Vec<Post>,
-	keywords: &HashSet<String>,
-	flairs: &HashSet<String>,
-	domains: &HashSet<String>,
-) {
+pub fn filter_posts_by_content(posts: &mut Vec<Post>, keywords: &HashSet<String>, flairs: &HashSet<String>, domains: &HashSet<String>) {
 	if keywords.is_empty() && flairs.is_empty() && domains.is_empty() {
 		return;
 	}

@@ -95,7 +95,10 @@
 					<input type="hidden" name="parent" value="t3_{{ post.id }}">
 					<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
 					<input type="hidden" name="return_to" value="{{ url }}">
-					<textarea name="text" rows="4" placeholder="Write your comment..." required maxlength="10000"></textarea>
+					<div class="textarea-wrapper">
+						<textarea name="text" rows="4" placeholder="Write your comment..." required maxlength="10000"></textarea>
+						<button type="button" class="emoji-btn" title="Add emoji">😀</button>
+					</div>
 					<div class="reply_form_actions">
 						<button type="submit" class="submit">Post comment</button>
 						<button type="button" class="reply_cancel_btn">Cancel</button>

@@ -1,0 +1,16 @@
+/* Sandbar theme setting */
+.sandbar {
+	--accent: #b46a2b;
+	--green: #4d8d62;
+	--text: #3f352b;
+	--foreground: #fcf4e7;
+	--background: #f1e5cf;
+	--outside: #f7eddc;
+	--post: #fff8ec;
+	--panel-border: 1px solid #e1cfaf;
+	--highlighted: #ecdfc7;
+	--visited: #736452;
+	--muted: #736452;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+html:has(> .sandbar) { color-scheme: light; }

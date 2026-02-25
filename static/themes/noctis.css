@@ -1,0 +1,15 @@
+/* Noctis theme setting */
+.noctis {
+	--accent: #82aaff;
+	--green: #c3e88d;
+	--text: #c8d3f5;
+	--foreground: #1b1f2a;
+	--background: #151821;
+	--outside: #1f2330;
+	--post: #1b1f2a;
+	--panel-border: 1px solid #32384a;
+	--highlighted: #272d3d;
+	--visited: #9ba7cc;
+	--muted: #9ba7cc;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

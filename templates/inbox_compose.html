@@ -7,22 +7,33 @@
 
 {% block body %}
 <main>
-	<div id="column_one">
-		<h1>Compose message</h1>
-		{% if !error.is_empty() %}
-		<p class="error">{{ error }}</p>
-		{% endif %}
-		<form action="/inbox/compose" method="POST" class="compose_form">
-			<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
-			<label for="to">To (username)</label>
-			<input type="text" name="to" id="to" value="{{ to }}" required placeholder="username" autocomplete="username">
-			<label for="subject">Subject</label>
-			<input type="text" name="subject" id="subject" value="{{ subject }}" required maxlength="100" placeholder="Subject">
-			<label for="text">Message</label>
-			<textarea name="text" id="text" rows="10" required placeholder="Your message..."></textarea>
-			<button type="submit" class="submit">Send</button>
-		</form>
-		<p><a href="/inbox">← Back to inbox</a></p>
+	<div id="column_one" class="compose_page">
+		<section class="compose_panel">
+			<header class="compose_header">
+				<p class="section_kicker">Messages</p>
+				<h1>Compose message</h1>
+				<p class="compose_intro">Send a private message directly from Redlib.</p>
+			</header>
+			{% if !error.is_empty() %}
+			<p class="error">{{ error }}</p>
+			{% endif %}
+			<form action="/inbox/compose" method="POST" class="compose_form">
+				<input type="hidden" name="csrf_token" value="{{ prefs.csrf_token }}">
+				<label for="to">To (username)</label>
+				<input type="text" name="to" id="to" value="{{ to }}" required placeholder="username" autocomplete="username">
+				<label for="subject">Subject</label>
+				<input type="text" name="subject" id="subject" value="{{ subject }}" required maxlength="100" placeholder="Subject">
+				<label for="text">Message</label>
+				<div class="textarea-wrapper">
+					<textarea name="text" id="text" rows="10" required placeholder="Your message..."></textarea>
+					<button type="button" class="emoji-btn" title="Add emoji">😀</button>
+				</div>
+				<div class="compose_actions">
+					<button type="submit" class="submit">Send</button>
+					<a href="/inbox" class="compose_backlink">Back to inbox</a>
+				</div>
+			</form>
+		</section>
 	</div>
 </main>
 {% endblock %}

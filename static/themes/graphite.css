@@ -1,0 +1,15 @@
+/* Graphite theme setting */
+.graphite {
+	--accent: #7aa2f7;
+	--green: #8ac38d;
+	--text: #d6d9de;
+	--foreground: #17181b;
+	--background: #111215;
+	--outside: #1d1f24;
+	--post: #17181b;
+	--panel-border: 1px solid #2d3138;
+	--highlighted: #252931;
+	--visited: #9ea5af;
+	--muted: #9ea5af;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}

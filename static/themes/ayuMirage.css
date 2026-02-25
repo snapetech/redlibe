@@ -1,0 +1,15 @@
+/* Ayu Mirage theme setting */
+.ayuMirage {
+	--accent: #ffd173;
+	--green: #87d96c;
+	--text: #cccac2;
+	--foreground: #242936;
+	--background: #1f2430;
+	--outside: #242936;
+	--post: #1f2430;
+	--panel-border: 1px solid #3a4152;
+	--highlighted: #31384a;
+	--visited: #9aa1ac;
+	--muted: #9aa1ac;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}

@@ -1,0 +1,15 @@
+/* Ember Ash theme setting */
+.emberAsh {
+	--accent: #d97757;
+	--green: #84b082;
+	--text: #e0d8d2;
+	--foreground: #1f1b1c;
+	--background: #171516;
+	--outside: #252124;
+	--post: #1d1a1b;
+	--panel-border: 1px solid #3b3437;
+	--highlighted: #302a2d;
+	--visited: #a99ba0;
+	--muted: #a99ba0;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}

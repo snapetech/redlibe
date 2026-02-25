@@ -1,0 +1,16 @@
+/* Solarized Light theme setting */
+.solarizedLight {
+	--accent: #268bd2;
+	--green: #859900;
+	--text: #586e75;
+	--foreground: #fdf6e3;
+	--background: #eee8d5;
+	--outside: #f5efdc;
+	--post: #fdf6e3;
+	--panel-border: 1px solid #d7ceb9;
+	--highlighted: #e7dfcb;
+	--visited: #657b83;
+	--muted: #657b83;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+html:has(> .solarizedLight) { color-scheme: light; }

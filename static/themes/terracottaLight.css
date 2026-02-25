@@ -1,0 +1,16 @@
+/* Terracotta Light theme setting */
+.terracottaLight {
+	--accent: #bb5a3c;
+	--green: #4f8f5f;
+	--text: #43332f;
+	--foreground: #fff6ef;
+	--background: #f5e4d7;
+	--outside: #fbefe5;
+	--post: #fff8f2;
+	--panel-border: 1px solid #e8cbbb;
+	--highlighted: #f0ddcf;
+	--visited: #7b655b;
+	--muted: #7b655b;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+html:has(> .terracottaLight) { color-scheme: light; }

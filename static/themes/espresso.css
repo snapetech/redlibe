@@ -1,0 +1,15 @@
+/* Espresso theme setting */
+.espresso {
+	--accent: #d9a066;
+	--green: #8ebd76;
+	--text: #eadfce;
+	--foreground: #241814;
+	--background: #1c1310;
+	--outside: #2a1d18;
+	--post: #241814;
+	--panel-border: 1px solid #49362f;
+	--highlighted: #382823;
+	--visited: #b9a792;
+	--muted: #b9a792;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}

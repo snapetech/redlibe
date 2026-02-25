@@ -1,0 +1,16 @@
+/* Everforest Light theme setting */
+.everforestLight {
+	--accent: #8da101;
+	--green: #35a77c;
+	--text: #5c6a72;
+	--foreground: #fdf6e3;
+	--background: #f3ead3;
+	--outside: #f8f0dc;
+	--post: #fff8e8;
+	--panel-border: 1px solid #e0dcc7;
+	--highlighted: #ede2cc;
+	--visited: #7f8c8d;
+	--muted: #7f8c8d;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+html:has(> .everforestLight) { color-scheme: light; }

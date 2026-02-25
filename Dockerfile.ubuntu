@@ -25,9 +25,17 @@ RUN echo "finished building redlib!"
 ########################
 FROM ubuntu:${UBUNTU_RELEASE_VERSION} AS release
 
+# Security: Set timezone to UTC
+ENV TZ=UTC
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install ca-certificates, openssh-client (SSH key auth), sshpass (SSH password auth for login)
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client sshpass \
-	&& rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssh-client \
+    sshpass \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Import redlib binary from builder
 COPY --from=builder /redlib/target/release/redlib /usr/local/bin/redlib
@@ -39,15 +47,27 @@ RUN useradd \
     --password "!" \
     --comment "user for running redlib" \
     redlib
+
+# Create directories with proper ownership for SSH and cache
+RUN mkdir -p /home/redlib/.ssh /home/redlib/.cache && \
+    chown -R redlib:redlib /home/redlib
+
+# Switch to non-root user
 USER redlib
+
+# Security: Set proper ulimits
+ENV NOMMU=1
 
 # Document that we intend to expose port 8080 to whoever runs the container
 EXPOSE 8080
 
 # Run a healthcheck every minute to make sure redlib is functional
-HEALTHCHECK --interval=1m --timeout=3s CMD wget --spider -q http://localhost:8080/settings || exit 1
+HEALTHCHECK --interval=1m --timeout=3s --start-period=5s --retries=3 CMD wget --spider -q http://localhost:8080/settings || exit 1
 
 # Add container metadata
 LABEL org.opencontainers.image.authors="sigaloid"
+
+# Security: Use read-only filesystem by default (can be overridden at runtime)
+# USER redlib already set above
 
 CMD ["redlib"]

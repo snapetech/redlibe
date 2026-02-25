@@ -14,7 +14,7 @@ use log::{info, warn};
 use redlib::client::{canonical_path, proxy, rate_limit_check, CLIENT};
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
-use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, subreddit, submit, user, vote};
+use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, submit, subreddit, user, vote};
 
 use redlib::client::OAUTH_CLIENT;
 
@@ -153,8 +153,8 @@ async fn main() {
 				.short('H')
 				.long("hsts")
 				.value_name("EXPIRE_TIME")
-				.help("HSTS header to tell browsers that this site should only be accessed over HTTPS")
-				.default_value("604800")
+				.help("HSTS header max-age in seconds (recommended: 15768000 = 6 months)")
+				.default_value("15768000")
 				.num_args(1),
 		)
 		.get_matches();
@@ -211,11 +211,13 @@ async fn main() {
 		"Referrer-Policy" => "no-referrer",
 		"X-Content-Type-Options" => "nosniff",
 		"X-Frame-Options" => "DENY",
+		"X-XSS-Protection" => "0",
+		"Permissions-Policy" => "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
 		"Content-Security-Policy" => "default-src 'none'; font-src 'self'; script-src 'self' blob:; manifest-src 'self'; media-src 'self' data: blob: about:; style-src 'self' 'unsafe-inline'; base-uri 'none'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; connect-src 'self'; worker-src blob:;"
 	};
 
 	if let Some(expire_time) = hsts {
-		if let Ok(val) = HeaderValue::from_str(&format!("max-age={expire_time}")) {
+		if let Ok(val) = HeaderValue::from_str(&format!("max-age={expire_time}; includeSubdomains")) {
 			app.default_headers.insert("Strict-Transport-Security", val);
 		}
 	}
@@ -307,10 +309,18 @@ async fn main() {
 
 	// Auth: login page, Reddit OAuth flow, SSH browser import, logout
 	app.at("/login").get(|r| auth::login_page(r).boxed());
-	app.at("/login/reddit").get(|_| async { Ok(redirect("/login")) }.boxed()).post(|r| auth::login_reddit(r).boxed());
-	app.at("/login/ssh-import").get(|_| async { Ok(redirect("/login")) }.boxed()).post(|r| auth::login_ssh_import(r).boxed());
+	app
+		.at("/login/reddit")
+		.get(|_| async { Ok(redirect("/login")) }.boxed())
+		.post(|r| auth::login_reddit(r).boxed());
+	app
+		.at("/login/ssh-import")
+		.get(|_| async { Ok(redirect("/login")) }.boxed())
+		.post(|r| auth::login_ssh_import(r).boxed());
 	app.at("/auth/callback").get(|r| auth::oauth_callback(r).boxed());
 	app.at("/logout").post(|r| auth::logout(r).boxed());
+	app.at("/auth/switch").post(|r| auth::switch_account(r).boxed());
+	app.at("/auth/remove").post(|r| auth::remove_account(r).boxed());
 
 	// Voting, save/unsave, comment reply
 	app.at("/vote").post(|r| vote::submit(r).boxed());
@@ -323,6 +333,8 @@ async fn main() {
 	// Inbox and private messages
 	app.at("/inbox").get(|r| inbox::list(r).boxed());
 	app.at("/inbox/compose").get(|r| inbox::compose_get(r).boxed()).post(|r| inbox::compose_post(r).boxed());
+	app.at("/inbox/read").post(|r| inbox::read_message(r).boxed());
+	app.at("/inbox/read-all").post(|r| inbox::read_all(r).boxed());
 
 	// Custom feeds (internal named multireddits)
 	app.at("/feeds").get(|r| feeds::get(r).boxed()).post(|r| feeds::post(r).boxed());

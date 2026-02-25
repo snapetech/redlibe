@@ -2,13 +2,13 @@
 
 use crate::{config, utils};
 // CRATES
-use crate::utils::{
-	catch_random, error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_num, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, info, nsfw_landing, param, redirect, rewrite_urls, setting, template, val, Post, Preferences,
-	Subreddit,
-};
-use crate::auth::AuthContext;
+use crate::auth::{secure_cookies, subscriptions_cookie_name, AuthContext};
 use crate::client::{authed_post, fetch_subscribed_subreddits, json};
 use crate::server::{RequestExt, ResponseExt};
+use crate::utils::{
+	catch_random, error, filter_media_only, filter_posts, filter_posts_by_content, filter_read_posts, format_num, format_url, get_filter_domains, get_filter_flairs,
+	get_filter_keywords, get_filters, get_read_ids, info, nsfw_landing, param, redirect, rewrite_urls, setting, template, val, Post, Preferences, Subreddit,
+};
 use askama::Template;
 use cookie::Cookie;
 use htmlescape::decode_html;
@@ -170,12 +170,7 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 		match Post::fetch(&path, quarantined).await {
 			Ok((mut posts, after)) => {
 				let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
-				filter_posts_by_content(
-					&mut posts,
-					&get_filter_keywords(&req),
-					&get_filter_flairs(&req),
-					&get_filter_domains(&req),
-				);
+				filter_posts_by_content(&mut posts, &get_filter_keywords(&req), &get_filter_flairs(&req), &get_filter_domains(&req));
 				if setting(&req, "hide_read") == "on" {
 					let read_ids = get_read_ids(&req);
 					filter_read_posts(&mut posts, &read_ids);
@@ -280,8 +275,7 @@ pub async fn mark_read(req: Request<Body>) -> Result<Response<Body>, String> {
 	if body_bytes.len() > MAX_MARK_READ_BODY {
 		return Err("Request body too large".to_string());
 	}
-	let form: std::collections::HashMap<String, String> =
-		url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+	let form: std::collections::HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 	let ids_param = form.get("ids").map(|s| s.as_str()).unwrap_or("");
 	let new_ids: std::collections::HashSet<String> = ids_param
 		.split(',')
@@ -549,21 +543,18 @@ pub async fn subscriptions_filters(req: Request<Body>) -> Result<Response<Body>,
 	if auth.is_authenticated() && !reddit_actions.is_empty() {
 		for (sr, is_sub) in reddit_actions {
 			let action = if is_sub { "sub" } else { "unsub" };
-			let body_str = format!(
-				"action={}&sr={}",
-				action,
-				percent_encoding::utf8_percent_encode(&sr, percent_encoding::NON_ALPHANUMERIC)
-			);
+			let body_str = format!("action={}&sr={}", action, percent_encoding::utf8_percent_encode(&sr, percent_encoding::NON_ALPHANUMERIC));
 			let _ = authed_post("/api/subscribe".to_string(), body_str, &auth).await;
 		}
 		if let Ok(subs) = fetch_subscribed_subreddits(&auth).await {
 			if subs.is_empty() {
-				response.remove_cookie("reddit_subscriptions".to_string());
+				response.remove_cookie(subscriptions_cookie_name().to_string());
 			} else {
 				response.insert_cookie(
-					Cookie::build(("reddit_subscriptions", subs.join("+")))
+					Cookie::build((subscriptions_cookie_name(), subs.join("+")))
 						.path("/")
 						.http_only(true)
+						.secure(secure_cookies())
 						.expires(OffsetDateTime::now_utc() + Duration::weeks(52))
 						.into(),
 				);
@@ -692,15 +683,8 @@ async fn subreddit(sub: &str, quarantined: bool) -> Result<Subreddit, String> {
 	let community_icon: &str = res["data"]["community_icon"].as_str().unwrap_or_default();
 	let icon = if community_icon.is_empty() { val(&res, "icon_img") } else { community_icon.to_string() };
 
-	let key_color: String = res["data"]["key_color"]
-		.as_str()
-		.map(|s| s.trim().to_string())
-		.unwrap_or_default();
-	let key_color = if key_color.starts_with('#') && key_color.len() >= 4 {
-		key_color
-	} else {
-		String::new()
-	};
+	let key_color: String = res["data"]["key_color"].as_str().map(|s| s.trim().to_string()).unwrap_or_default();
+	let key_color = if key_color.starts_with('#') && key_color.len() >= 4 { key_color } else { String::new() };
 
 	Ok(Subreddit {
 		name: val(&res, "display_name"),

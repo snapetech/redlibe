@@ -1,0 +1,15 @@
+/* Kanagawa theme setting */
+.kanagawa {
+	--accent: #7e9cd8;
+	--green: #98bb6c;
+	--text: #dcd7ba;
+	--foreground: #1f1f28;
+	--background: #16161d;
+	--outside: #1f1f28;
+	--post: #181820;
+	--panel-border: 1px solid #2a2a37;
+	--highlighted: #2a2a37;
+	--visited: #a09cac;
+	--muted: #a09cac;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

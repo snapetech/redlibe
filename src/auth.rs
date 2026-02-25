@@ -8,6 +8,8 @@
 //! Session cookies are encrypted with AES-256-GCM. The key is derived via
 //! HKDF-SHA256 from `REDLIB_SESSION_SECRET`. No server-side DB required.
 
+#![allow(clippy::cmp_owned)]
+
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -22,7 +24,8 @@ use cookie::{Cookie, SameSite};
 use hkdf::Hkdf;
 use hyper::{Body, Method, Request, Response};
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use sha2::Sha256;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -68,9 +71,39 @@ static EPHEMERAL_SESSION_KEY: LazyLock<[u8; 32]> = LazyLock::new(|| {
 	key
 });
 
-// Cookie names
-pub const SESSION_COOKIE: &str = "rl_session";
-const CSRF_COOKIE: &str = "rl_csrf";
+// Cookie names - use __Host- prefix for enhanced security when HTTPS is enabled
+pub fn session_cookie_name() -> &'static str {
+	if secure_cookies() {
+		"__Host-rl_session"
+	} else {
+		"rl_session"
+	}
+}
+
+/// Cookie to track which account is active (stores username).
+pub fn active_session_cookie_name() -> &'static str {
+	if secure_cookies() {
+		"__Host-rl_active"
+	} else {
+		"rl_active"
+	}
+}
+
+pub fn csrf_cookie_name() -> &'static str {
+	if secure_cookies() {
+		"__Host-rl_csrf"
+	} else {
+		"rl_csrf"
+	}
+}
+
+pub fn subscriptions_cookie_name() -> &'static str {
+	if secure_cookies() {
+		"__Host-reddit_subscriptions"
+	} else {
+		"reddit_subscriptions"
+	}
+}
 
 /// Reddit OAuth scopes requested during the user login flow.
 const OAUTH_SCOPES: &str = "identity read vote subscribe history save submit privatemessages";
@@ -90,6 +123,48 @@ pub struct SessionData {
 	pub expires_at: i64,
 	/// Per-session CSRF token embedded in HTML forms to prevent CSRF attacks.
 	pub csrf_token: String,
+}
+
+/// Serializable session vault — holds multiple user sessions for account switching.
+/// Stored AES-256-GCM encrypted in `rl_session` cookie.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionVault {
+	/// List of session data for all accounts.
+	pub sessions: Vec<SessionData>,
+}
+
+impl SessionVault {
+	pub fn new() -> Self {
+		Self { sessions: Vec::new() }
+	}
+
+	pub fn add(&mut self, session: SessionData) {
+		// Remove any existing session for the same username
+		self.sessions.retain(|s| s.username != session.username);
+		self.sessions.push(session);
+	}
+
+	pub fn remove(&mut self, username: &str) {
+		self.sessions.retain(|s| s.username != username);
+	}
+
+	pub fn get(&self, username: &str) -> Option<&SessionData> {
+		self.sessions.iter().find(|s| s.username == username)
+	}
+
+	pub fn active_session(&self) -> Option<&SessionData> {
+		self.sessions.first()
+	}
+
+	pub fn usenames(&self) -> Vec<String> {
+		self.sessions.iter().map(|s| s.username.clone()).collect()
+	}
+}
+
+impl Default for SessionVault {
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
 // ----- Auth context -----
@@ -112,7 +187,7 @@ impl AuthContext {
 	/// Resolve auth context for a request. Resolution order:
 	/// 1. `REDLIB_RAW_TOKEN` — direct bearer token (highest priority)
 	/// 2. `REDLIB_BROWSER_TOKEN` — browser-exported `token_v2` JWT, decoded to bearer
-	/// 3. `rl_session` cookie — encrypted OAuth user session
+	/// 3. `rl_session` cookie — encrypted OAuth session vault
 	/// 4. `Anonymous`
 	pub fn from_request(req: &Request<Body>) -> Self {
 		// Priority 1: raw bearer token from config
@@ -126,19 +201,61 @@ impl AuthContext {
 			return AuthContext::RawBearer(bearer);
 		}
 
-		// Priority 3: encrypted session cookie
-		if let Some(cookie) = req.cookie(SESSION_COOKIE) {
-			if let Some(session) = decrypt_session(cookie.value()) {
-				// Accept tokens with up to 30s of grace past expiry (clock skew / slow requests)
+		// Priority 3: encrypted session vault cookie
+		if let Some(cookie) = req.cookie(session_cookie_name()) {
+			if let Some(vault) = decrypt_vault(cookie.value()) {
+				// Find active session: first by rl_active cookie, then first in vault
+				let active_username = req.cookie(active_session_cookie_name()).map(|c| c.value().to_string());
 				let now = OffsetDateTime::now_utc().unix_timestamp();
-				if session.expires_at > now - 30 {
-					return AuthContext::UserSession(session);
+
+				// Try active username first
+				if let Some(username) = active_username {
+					if let Some(session) = vault.get(&username) {
+						if session.expires_at > now - 30 {
+							return AuthContext::UserSession(session.clone());
+						}
+					}
+				}
+
+				// Fall back to first valid session
+				for session in &vault.sessions {
+					if session.expires_at > now - 30 {
+						return AuthContext::UserSession(session.clone());
+					}
 				}
 			}
 		}
 
 		// Priority 4: anonymous
 		AuthContext::Anonymous
+	}
+
+	/// Return all usernames in the session vault (for account switching UI).
+	pub fn all_usernames(req: &Request<Body>) -> Vec<String> {
+		if let Some(cookie) = req.cookie(session_cookie_name()) {
+			if let Some(vault) = decrypt_vault(cookie.value()) {
+				return vault.usenames();
+			}
+		}
+		Vec::new()
+	}
+
+	/// Return the active username from the cookie (for display).
+	pub fn active_username(req: &Request<Body>) -> Option<String> {
+		if let Some(cookie) = req.cookie(session_cookie_name()) {
+			if let Some(vault) = decrypt_vault(cookie.value()) {
+				// Check active cookie first
+				if let Some(active) = req.cookie(active_session_cookie_name()) {
+					let active_str = active.value();
+					if vault.get(active_str).is_some() {
+						return Some(active_str.to_string());
+					}
+				}
+				// Default to first session
+				return vault.active_session().map(|s| s.username.clone());
+			}
+		}
+		None
 	}
 
 	/// Return the bearer token for authenticated Reddit API calls, if any.
@@ -259,19 +376,165 @@ pub fn decrypt_session(encoded: &str) -> Option<SessionData> {
 	serde_json::from_slice(&plaintext).ok()
 }
 
+/// Encrypt `SessionVault` to a base64 string suitable for a cookie value.
+pub fn encrypt_vault(vault: &SessionVault) -> Option<String> {
+	let key_bytes = session_key();
+	let cipher = Aes256Gcm::new_from_slice(&key_bytes).ok()?;
+
+	let mut nonce_bytes = [0u8; 12];
+	rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+	let nonce = Nonce::from_slice(&nonce_bytes);
+
+	let plaintext = serde_json::to_vec(vault).ok()?;
+	let ciphertext = cipher.encrypt(nonce, plaintext.as_ref()).ok()?;
+
+	let mut combined = nonce_bytes.to_vec();
+	combined.extend_from_slice(&ciphertext);
+
+	Some(general_purpose::STANDARD.encode(combined))
+}
+
+/// Decrypt and deserialize a base64 session vault cookie value.
+pub fn decrypt_vault(encoded: &str) -> Option<SessionVault> {
+	let combined = general_purpose::STANDARD.decode(encoded).ok()?;
+	if combined.len() < 12 {
+		return None;
+	}
+	let (nonce_bytes, ciphertext) = combined.split_at(12);
+	let key_bytes = session_key();
+	let cipher = Aes256Gcm::new_from_slice(&key_bytes).ok()?;
+	let nonce = Nonce::from_slice(nonce_bytes);
+	let plaintext = cipher.decrypt(nonce, ciphertext).ok()?;
+	serde_json::from_slice(&plaintext).ok()
+}
+
+/// Add a new session to the vault and return a response with updated cookies.
+/// Sets the new session as active.
+pub fn add_session_to_vault(session: SessionData) -> Result<Response<Body>, String> {
+	let mut vault = SessionVault::new();
+	vault.add(session.clone());
+
+	let encrypted = encrypt_vault(&vault).ok_or("Failed to encrypt session vault")?;
+	let mut response = redirect("/");
+	response.insert_cookie(
+		Cookie::build((session_cookie_name(), encrypted))
+			.path("/")
+			.http_only(true)
+			.secure(secure_cookies())
+			.same_site(SameSite::Lax)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+			.into(),
+	);
+	// Set active session to the new username
+	response.insert_cookie(
+		Cookie::build((active_session_cookie_name(), session.username.clone()))
+			.path("/")
+			.http_only(true)
+			.secure(secure_cookies())
+			.same_site(SameSite::Lax)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+			.into(),
+	);
+	Ok(response)
+}
+
+/// Switch to a different account in the vault.
+pub fn switch_active_session(username: &str, vault_cookie: Option<&str>) -> Result<Response<Body>, String> {
+	// Verify the username exists in the vault
+	if let Some(cookie_val) = vault_cookie {
+		let vault = decrypt_vault(cookie_val).ok_or("No sessions found")?;
+		if vault.get(username).is_none() {
+			return Err("Session not found".to_string());
+		}
+	}
+
+	let mut response = redirect("/");
+	response.insert_cookie(
+		Cookie::build((active_session_cookie_name(), username.to_string()))
+			.path("/")
+			.http_only(true)
+			.secure(secure_cookies())
+			.same_site(SameSite::Lax)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+			.into(),
+	);
+	Ok(response)
+}
+
+/// Remove a session from the vault.
+pub fn remove_session_from_vault(username: &str, vault_cookie: Option<&str>) -> Result<Response<Body>, String> {
+	let mut vault = vault_cookie.and_then(|c| decrypt_vault(c)).unwrap_or_default();
+
+	// If removing active session, switch to another if available
+	let had_active = vault.get(username).is_some();
+	let was_only = vault.sessions.len() == 1;
+	vault.remove(username);
+
+	let encrypted = encrypt_vault(&vault).ok_or("Failed to encrypt session vault")?;
+	let mut response = redirect("/");
+	response.insert_cookie(
+		Cookie::build((session_cookie_name(), encrypted))
+			.path("/")
+			.http_only(true)
+			.secure(secure_cookies())
+			.same_site(SameSite::Lax)
+			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+			.into(),
+	);
+
+	// If we removed the active session and there are others, switch to first
+	if had_active && !was_only {
+		if let Some(first) = vault.active_session() {
+			response.insert_cookie(
+				Cookie::build((active_session_cookie_name(), first.username.clone()))
+					.path("/")
+					.http_only(true)
+					.secure(secure_cookies())
+					.same_site(SameSite::Lax)
+					.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+					.into(),
+			);
+		}
+	} else if was_only || vault.sessions.is_empty() {
+		// No sessions left - clear active cookie
+		response.remove_cookie(active_session_cookie_name().to_string());
+	}
+	Ok(response)
+}
+
 /// Returns `true` when the `Secure` cookie attribute should be set.
 ///
 /// Enable via `REDLIB_SECURE_COOKIES=on` (recommended for HTTPS deployments).
 /// Defaults to `false` to avoid breaking plain-HTTP local setups.
-fn secure_cookies() -> bool {
-	CONFIG.secure_cookies.as_deref().map(|v| v.eq_ignore_ascii_case("on") || v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
+pub fn secure_cookies() -> bool {
+	CONFIG
+		.secure_cookies
+		.as_deref()
+		.map(|v| v.eq_ignore_ascii_case("on") || v == "1" || v.eq_ignore_ascii_case("true"))
+		.unwrap_or(false)
+}
+
+/// Returns the SSH connection timeout in seconds. Default: 15.
+fn ssh_timeout() -> u64 {
+	CONFIG.ssh_timeout.as_deref().and_then(|v| v.parse().ok()).unwrap_or(15)
+}
+
+/// Returns whether strict SSH host key checking is enabled.
+/// When disabled (default), new hosts are automatically added to known_hosts.
+/// When enabled, the host must already be in known_hosts.
+fn ssh_strict_host_key_checking() -> bool {
+	CONFIG
+		.ssh_strict_host_key_checking
+		.as_deref()
+		.map(|v| v.eq_ignore_ascii_case("on") || v == "1" || v.eq_ignore_ascii_case("true"))
+		.unwrap_or(false)
 }
 
 /// Reserialize a mutated `SessionData` back into the session cookie on a response.
 pub fn update_session_cookie(response: &mut Response<Body>, data: &SessionData) {
 	if let Some(encrypted) = encrypt_session(data) {
 		response.insert_cookie(
-			Cookie::build((SESSION_COOKIE.to_string(), encrypted))
+			Cookie::build((session_cookie_name(), encrypted))
 				.path("/")
 				.http_only(true)
 				.secure(secure_cookies())
@@ -347,7 +610,7 @@ pub async fn login_reddit(req: Request<Body>) -> Result<Response<Body>, String> 
 
 	let mut response = redirect(&authorize_url);
 	response.insert_cookie(
-		Cookie::build((CSRF_COOKIE.to_string(), state))
+		Cookie::build((csrf_cookie_name(), state))
 			.path("/")
 			.http_only(true)
 			.secure(secure_cookies())
@@ -372,12 +635,16 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
-	let ssh_host = form.get("ssh_host").map(|s| s.trim().to_string()).unwrap_or_else(|| CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string()));
-	let ssh_user = form.get("ssh_user").map(|s| s.trim().to_string()).unwrap_or_else(|| CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()));
+	let ssh_host = form
+		.get("ssh_host")
+		.map(|s| s.trim().to_string())
+		.unwrap_or_else(|| CONFIG.ssh_host.clone().unwrap_or_else(|| "kspld0".to_string()));
+	let ssh_user = form
+		.get("ssh_user")
+		.map(|s| s.trim().to_string())
+		.unwrap_or_else(|| CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()));
 	let browser = form.get("browser").map(|s| s.as_str()).unwrap_or("librewolf");
 
 	// Validate ssh_host and ssh_user to prevent injection (used as CLI args, not shell strings)
@@ -401,16 +668,8 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			(None, None)
 		} else {
 			// Normalize for OpenSSH: strip BOM, CRLF -> LF, ensure trailing newline (avoids "error in libcrypto")
-			let normalized = pasted
-				.strip_prefix('\u{feff}')
-				.unwrap_or(pasted)
-				.replace("\r\n", "\n")
-				.replace('\r', "\n");
-			let normalized = if normalized.ends_with('\n') {
-				normalized
-			} else {
-				format!("{normalized}\n")
-			};
+			let normalized = pasted.strip_prefix('\u{feff}').unwrap_or(pasted).replace("\r\n", "\n").replace('\r', "\n");
+			let normalized = if normalized.ends_with('\n') { normalized } else { format!("{normalized}\n") };
 			// Detect public key paste (one line starting with "ssh-rsa " or "ssh-ed25519 ") — SSH needs the private key to connect
 			if normalized.starts_with("ssh-rsa ") || normalized.starts_with("ssh-ed25519 ") {
 				if normalized.lines().count() <= 1 {
@@ -505,7 +764,7 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			let encrypted = encrypt_session(&session).ok_or("Failed to encrypt session data")?;
 			let mut response = redirect("/");
 			response.insert_cookie(
-				Cookie::build((SESSION_COOKIE.to_string(), encrypted))
+				Cookie::build((session_cookie_name(), encrypted))
 					.path("/")
 					.http_only(true)
 					.secure(secure_cookies())
@@ -559,22 +818,32 @@ echo "ARCH=$ARCH""#,
 		browser = browser,
 	);
 
-	let output = tokio::process::Command::new("ssh")
-		.args([
-			"-i",
-			key_path,
-			"-o",
-			"BatchMode=yes",
-			"-o",
-			"ConnectTimeout=15",
-			"-o",
-			"StrictHostKeyChecking=accept-new",
-			&format!("{user}@{host}"),
-			&remote_script,
-		])
-		.output()
-		.await
-		.map_err(|e| format!("Failed to run ssh: {e}"))?;
+	let timeout_secs = ssh_timeout();
+	let strict_checking = ssh_strict_host_key_checking();
+	let output = tokio::time::timeout(
+		std::time::Duration::from_secs(timeout_secs + 10),
+		tokio::process::Command::new("ssh")
+			.args([
+				"-i",
+				key_path,
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				&format!("ConnectTimeout={timeout_secs}"),
+				"-o",
+				if strict_checking {
+					"StrictHostKeyChecking=yes"
+				} else {
+					"StrictHostKeyChecking=accept-new"
+				},
+				&format!("{user}@{host}"),
+				&remote_script,
+			])
+			.output(),
+	)
+	.await
+	.map_err(|e| format!("SSH command timed out after {timeout_secs} seconds: {e}"))?
+	.map_err(|e| format!("Failed to run ssh: {e}"))?;
 
 	let stdout = String::from_utf8_lossy(&output.stdout);
 	let stderr = String::from_utf8_lossy(&output.stderr);
@@ -643,13 +912,7 @@ echo "ARCH=$ARCH""#,
 
 /// Same as ssh_extract_token but uses sshpass to supply the key passphrase (for encrypted private keys).
 /// Runs: sshpass -p passphrase ssh -i key_path -o BatchMode=no ...
-async fn ssh_extract_token_key_passphrase(
-	host: &str,
-	user: &str,
-	key_path: &str,
-	passphrase: &str,
-	browser: &str,
-) -> Result<(String, String), String> {
+async fn ssh_extract_token_key_passphrase(host: &str, user: &str, key_path: &str, passphrase: &str, browser: &str) -> Result<(String, String), String> {
 	let find_path = match browser {
 		"firefox" => "~/.mozilla/firefox",
 		_ => "~/.librewolf",
@@ -671,25 +934,35 @@ echo "ARCH=$ARCH""#,
 	);
 
 	// BatchMode=no so ssh will prompt for key passphrase and sshpass can supply it
-	let output = tokio::process::Command::new("sshpass")
-		.args([
-			"-p",
-			passphrase,
-			"ssh",
-			"-i",
-			key_path,
-			"-o",
-			"BatchMode=no",
-			"-o",
-			"ConnectTimeout=15",
-			"-o",
-			"StrictHostKeyChecking=accept-new",
-			&format!("{user}@{host}"),
-			&remote_script,
-		])
-		.output()
-		.await
-		.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
+	let timeout_secs = ssh_timeout();
+	let strict_checking = ssh_strict_host_key_checking();
+	let output = tokio::time::timeout(
+		std::time::Duration::from_secs(timeout_secs + 10),
+		tokio::process::Command::new("sshpass")
+			.args([
+				"-p",
+				passphrase,
+				"ssh",
+				"-i",
+				key_path,
+				"-o",
+				"BatchMode=no",
+				"-o",
+				&format!("ConnectTimeout={timeout_secs}"),
+				"-o",
+				if strict_checking {
+					"StrictHostKeyChecking=yes"
+				} else {
+					"StrictHostKeyChecking=accept-new"
+				},
+				&format!("{user}@{host}"),
+				&remote_script,
+			])
+			.output(),
+	)
+	.await
+	.map_err(|e| format!("SSH command timed out after {timeout_secs} seconds: {e}"))?
+	.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
 
 	let stdout = String::from_utf8_lossy(&output.stdout);
 	let stderr = String::from_utf8_lossy(&output.stderr);
@@ -770,23 +1043,33 @@ echo "ARCH=$ARCH""#,
 		browser = browser,
 	);
 
-	let output = tokio::process::Command::new("sshpass")
-		.args([
-			"-p",
-			password,
-			"ssh",
-			"-o",
-			"BatchMode=yes",
-			"-o",
-			"ConnectTimeout=15",
-			"-o",
-			"StrictHostKeyChecking=accept-new",
-			&format!("{user}@{host}"),
-			&remote_script,
-		])
-		.output()
-		.await
-		.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
+	let timeout_secs = ssh_timeout();
+	let strict_checking = ssh_strict_host_key_checking();
+	let output = tokio::time::timeout(
+		std::time::Duration::from_secs(timeout_secs + 10),
+		tokio::process::Command::new("sshpass")
+			.args([
+				"-p",
+				password,
+				"ssh",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				&format!("ConnectTimeout={timeout_secs}"),
+				"-o",
+				if strict_checking {
+					"StrictHostKeyChecking=yes"
+				} else {
+					"StrictHostKeyChecking=accept-new"
+				},
+				&format!("{user}@{host}"),
+				&remote_script,
+			])
+			.output(),
+	)
+	.await
+	.map_err(|e| format!("SSH command timed out after {timeout_secs} seconds: {e}"))?
+	.map_err(|e| format!("Failed to run sshpass/ssh: {e}. Is sshpass installed?"))?;
 
 	let stdout = String::from_utf8_lossy(&output.stdout);
 	let stderr = String::from_utf8_lossy(&output.stderr);
@@ -854,13 +1137,11 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 
 	// Parse query parameters from the callback URL
 	let query = req.uri().query().unwrap_or("");
-	let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes()).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	// Validate CSRF state
 	let state = params.get("state").ok_or("Missing 'state' parameter in callback")?;
-	let csrf_cookie = req.cookie(CSRF_COOKIE).ok_or("Missing CSRF cookie — possible CSRF attack or cookie expired")?;
+	let csrf_cookie = req.cookie(csrf_cookie_name()).ok_or("Missing CSRF cookie — possible CSRF attack or cookie expired")?;
 	if state != csrf_cookie.value() {
 		return Err("CSRF state mismatch — possible CSRF attack".to_string());
 	}
@@ -878,9 +1159,7 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 	// Fetch the username from Reddit's /api/v1/me
 	let username = fetch_username(&tokens.access_token).await.unwrap_or_else(|_| "unknown".to_string());
 	// Populate Reddit subscriptions for Feeds nav (fetch before moving tokens into session)
-	let reddit_subs: Vec<String> = client::fetch_subscribed_subreddits_with_bearer(&tokens.access_token)
-		.await
-		.unwrap_or_default();
+	let reddit_subs: Vec<String> = client::fetch_subscribed_subreddits_with_bearer(&tokens.access_token).await.unwrap_or_default();
 
 	let expires_at = OffsetDateTime::now_utc().unix_timestamp() + tokens.expires_in as i64;
 
@@ -892,21 +1171,11 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 		csrf_token: Uuid::new_v4().to_string(),
 	};
 
-	let encrypted = encrypt_session(&session).ok_or("Failed to encrypt session data")?;
+	let mut response = add_session_to_vault(session)?;
 
-	let mut response = redirect("/");
-	response.insert_cookie(
-		Cookie::build((SESSION_COOKIE.to_string(), encrypted))
-			.path("/")
-			.http_only(true)
-			.secure(secure_cookies())
-			.same_site(SameSite::Lax)
-			.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
-			.into(),
-	);
 	if !reddit_subs.is_empty() {
 		response.insert_cookie(
-			Cookie::build(("reddit_subscriptions", reddit_subs.join("+")))
+			Cookie::build((subscriptions_cookie_name(), reddit_subs.join("+")))
 				.path("/")
 				.http_only(true)
 				.secure(secure_cookies())
@@ -916,32 +1185,83 @@ pub async fn oauth_callback(req: Request<Body>) -> Result<Response<Body>, String
 		);
 	}
 	// Clear the CSRF cookie — it's served its purpose
-	response.remove_cookie(CSRF_COOKIE.to_string());
-
+	response.remove_cookie(csrf_cookie_name().to_string());
+	response.remove_cookie(session_cookie_name().to_string());
+	response.remove_cookie(subscriptions_cookie_name().to_string());
 	Ok(response)
 }
 
-/// `POST /logout` — validate CSRF token, clear the session cookie.
+/// `POST /logout` — validate CSRF token, remove active session from vault.
 pub async fn logout(req: Request<Body>) -> Result<Response<Body>, String> {
 	// Extract auth context before consuming the body
 	let auth = AuthContext::from_request(&req);
+
+	// Get username early before consuming the request
+	let username = auth.username().map(|s| s.to_string());
+
+	// Get session cookie before consuming request (clone to own the value)
+	let vault_cookie = req.cookie(session_cookie_name()).map(|c| c.value().to_string());
 
 	// Read and parse POST body for CSRF token (with size limit)
 	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	let submitted_csrf = form.get("csrf_token").map(|s| s.as_str()).unwrap_or("");
 	validate_csrf_token(&auth, submitted_csrf)?;
 
+	// Remove active session from vault
+	if let Some(username) = username {
+		return remove_session_from_vault(&username, vault_cookie.as_deref());
+	}
+
 	let mut response = redirect("/");
-	response.remove_cookie(SESSION_COOKIE.to_string());
-	response.remove_cookie("reddit_subscriptions".to_string());
+	response.remove_cookie(session_cookie_name().to_string());
+	response.remove_cookie(active_session_cookie_name().to_string());
+	response.remove_cookie(subscriptions_cookie_name().to_string());
 	Ok(response)
+}
+
+/// `POST /auth/switch` — switch to a different account in the vault.
+/// Body: username=...
+pub async fn switch_account(req: Request<Body>) -> Result<Response<Body>, String> {
+	// Get session cookie before consuming request (clone to own the value)
+	let vault_cookie = req.cookie(session_cookie_name()).map(|c| c.value().to_string());
+
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_BODY_SIZE {
+		return Err("Request body too large".to_string());
+	}
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+
+	let username = form.get("username").map(|s| s.as_str()).unwrap_or("");
+	if username.is_empty() {
+		return Err("Username is required".to_string());
+	}
+
+	switch_active_session(username, vault_cookie.as_deref())
+}
+
+/// `POST /auth/remove` — remove a specific account from the vault.
+/// Body: username=...
+pub async fn remove_account(req: Request<Body>) -> Result<Response<Body>, String> {
+	// Get session cookie before consuming request (clone to own the value)
+	let vault_cookie = req.cookie(session_cookie_name()).map(|c| c.value().to_string());
+
+	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
+	if body_bytes.len() > MAX_BODY_SIZE {
+		return Err("Request body too large".to_string());
+	}
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+
+	let username = form.get("username").map(|s| s.as_str()).unwrap_or("");
+	if username.is_empty() {
+		return Err("Username is required".to_string());
+	}
+
+	remove_session_from_vault(username, vault_cookie.as_deref())
 }
 
 // ----- Reddit API helpers -----
@@ -1037,10 +1357,7 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<(String, i64), 
 	let bytes = hyper::body::to_bytes(resp.into_body()).await.map_err(|e| e.to_string())?;
 	let json: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
 
-	let new_token = json["access_token"]
-		.as_str()
-		.ok_or("Missing access_token in refresh response")?
-		.to_string();
+	let new_token = json["access_token"].as_str().ok_or("Missing access_token in refresh response")?.to_string();
 	let expires_in = json["expires_in"].as_i64().unwrap_or(3600);
 	let expires_at = OffsetDateTime::now_utc().unix_timestamp() + expires_in;
 

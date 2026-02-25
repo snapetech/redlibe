@@ -1,0 +1,15 @@
+/* Slate Amber theme setting */
+.slateAmber {
+	--accent: #f0b35f;
+	--green: #8fc48a;
+	--text: #dde2ea;
+	--foreground: #1f2430;
+	--background: #171b24;
+	--outside: #262c3a;
+	--post: #1f2430;
+	--panel-border: 1px solid #394154;
+	--highlighted: #30384a;
+	--visited: #a0a8b8;
+	--muted: #a0a8b8;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}

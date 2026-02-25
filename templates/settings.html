@@ -23,25 +23,63 @@
 				<legend>Appearance</legend>
 				<div class="prefs-group">
 					<label for="theme">Theme:</label>
-					<select name="theme" id="theme">
-						{% call utils::options(prefs.theme, prefs.available_themes, "system") %}
-					</select>
+					<div class="theme_picker">
+						<select name="theme" id="theme">
+							{% call utils::options(prefs.theme, prefs.available_themes, "system") %}
+						</select>
+							<div class="theme_picker_meta">
+								<p class="helper theme_picker_hint">Preview themes and click to select.</p>
+							</div>
+							<div class="theme_picker_controls">
+								<div class="theme_view_toggle" role="tablist" aria-label="Theme list filter">
+									<button type="button" class="theme_view_btn selected" data-theme-view="all" aria-pressed="true">All</button>
+									<button type="button" class="theme_view_btn" data-theme-view="favorites" aria-pressed="false">Favorites</button>
+									<button type="button" class="theme_view_btn" data-theme-view="recent" aria-pressed="false">Recent</button>
+								</div>
+								<button type="button" id="theme_favorite_toggle" class="theme_favorite_toggle">Star selected</button>
+							</div>
+							<div class="theme_quicklists">
+								<div class="theme_quicklist" id="theme_favorites_quicklist" hidden>
+									<p class="theme_quicklist_title">Favorites</p>
+									<div class="theme_quicklist_items"></div>
+								</div>
+								<div class="theme_quicklist" id="theme_recent_quicklist" hidden>
+									<p class="theme_quicklist_title">Recent</p>
+									<div class="theme_quicklist_items"></div>
+								</div>
+							</div>
+							<div class="theme_grid" id="theme_grid" role="list" aria-label="Theme previews">
+							{% for theme in prefs.available_themes %}
+							<button
+								type="button"
+								class="theme_tile{% if prefs.theme == theme.to_string() || (prefs.theme == "" && theme == "system") %} selected{% endif %}"
+								data-theme-name="{{ theme }}"
+								aria-pressed="{% if prefs.theme == theme.to_string() || (prefs.theme == "" && theme == "system") %}true{% else %}false{% endif %}">
+								<span class="theme_preview_card {% if theme != "system" %}{{ theme }}{% endif %}">
+									<span class="theme_preview_top">
+										<span class="theme_preview_dot"></span>
+										<span class="theme_preview_dot"></span>
+										<span class="theme_preview_dot"></span>
+									</span>
+									<span class="theme_preview_body">
+										<span class="theme_preview_line theme_preview_line_title"></span>
+										<span class="theme_preview_line"></span>
+										<span class="theme_preview_line theme_preview_line_short"></span>
+										<span class="theme_preview_pills">
+											<span class="theme_preview_pill"></span>
+											<span class="theme_preview_pill"></span>
+										</span>
+									</span>
+								</span>
+								<span class="theme_tile_label">{{ theme }}</span>
+							</button>
+							{% endfor %}
+						</div>
+					</div>
 				</div>
 			</fieldset>
 			<fieldset>
 				<legend>Interface</legend>
-				<div class="prefs-group">
-					<label for="remove_default_feeds">Remove default feeds</label>
-					<input type="hidden" value="off" name="remove_default_feeds">
-					<input type="checkbox" name="remove_default_feeds" id="remove_default_feeds" {% if
-						prefs.remove_default_feeds=="on" %}checked{% endif %}>
-				</div>
-				<div class="prefs-group">
-					<label for="front_page">Front page:</label>
-					<select name="front_page" id="front_page">
-						{% call utils::options(prefs.front_page, ["default", "popular", "all"], "default") %}
-					</select>
-				</div>
 				<div class="prefs-group">
 					<label for="layout">Layout:</label>
 					<select name="layout" id="layout">
@@ -60,37 +98,13 @@
 					</select>
 				</div>
 				<div class="prefs-group">
-					<label for="show_only_media" title="In feeds, show only posts with image, video, gif, or gallery">Show only media posts</label>
-					<input type="hidden" value="off" name="show_only_media">
-					<input type="checkbox" name="show_only_media" id="show_only_media" {% if prefs.show_only_media=="on" %}checked{% endif %}>
-				</div>
-				<div class="prefs-group">
-					<label for="enable_offline" title="Cache CSS, JS, and images so pages load from cache when offline or slow">Enable offline caching</label>
-					<input type="hidden" value="off" name="enable_offline">
-					<input type="checkbox" name="enable_offline" id="enable_offline" {% if prefs.enable_offline=="on" %}checked{% endif %}>
-				</div>
-				<div class="prefs-group" id="clear_cache_wrap">
-					<button type="button" id="clear_offline_cache_btn" title="Clear cached static assets (e.g. after enabling offline)">Clear offline cache</button>
-				</div>
-				<div class="prefs-group">
 					<label for="use_subreddit_theme" title="Use each subreddit's accent color (from Reddit) on that community's page">Use subreddit theme (accent color)</label>
 					<input type="hidden" value="off" name="use_subreddit_theme">
 					<input type="checkbox" name="use_subreddit_theme" id="use_subreddit_theme" {% if prefs.use_subreddit_theme=="on" %}checked{% endif %}>
 				</div>
-				<div class="prefs-group">
-					<label for="low_data" title="Prefer smaller preview images in galleries to use less data">Low data (smaller gallery images)</label>
-					<input type="hidden" value="off" name="low_data">
-					<input type="checkbox" name="low_data" id="low_data" {% if prefs.low_data=="on" %}checked{% endif %}>
-				</div>
 			</fieldset>
 			<fieldset>
 				<legend>Content</legend>
-				<div class="prefs-group">
-					<label for="video_quality">Video quality:</label>
-					<select name="video_quality" id="video_quality">
-						{% call utils::options(prefs.video_quality, ["best", "medium", "worst"], "best") %}
-					</select>
-				</div>
 				<div class="prefs-group">
 					<label for="post_sort" title="Applies only to subreddit feeds">Default subreddit post sort:</label>
 					<select name="post_sort">
@@ -126,23 +140,6 @@
 				</div>
 				{% endif %}
 				<div class="prefs-group">
-					<label for="autoplay_videos">Autoplay videos</label>
-					<input type="hidden" value="off" name="autoplay_videos">
-					<input type="checkbox" name="autoplay_videos" id="autoplay_videos" {% if prefs.autoplay_videos=="on"
-						%}checked{% endif %}>
-				</div>
-				<div class="prefs-group">
-					<label for="fixed_navbar">Keep navbar fixed</label>
-					<input type="hidden" value="off" name="fixed_navbar">
-					<input type="checkbox" name="fixed_navbar" {% if prefs.fixed_navbar=="on" %}checked{% endif %}>
-				</div>
-				<div class="prefs-group">
-					<label for="hide_sidebar_and_summary">Hide the summary and sidebar</label>
-					<input type="hidden" value="off" name="hide_sidebar_and_summary">
-					<input type="checkbox" name="hide_sidebar_and_summary" {% if prefs.hide_sidebar_and_summary=="on"
-						%}checked{% endif %}>
-				</div>
-				<div class="prefs-group">
 					<label for="hide_read" title="Hide posts you have already seen (marked read on scroll)">Hide read posts</label>
 					<input type="hidden" value="off" name="hide_read">
 					<input type="checkbox" name="hide_read" id="hide_read" {% if prefs.hide_read=="on" %}checked{% endif %}>
@@ -159,6 +156,12 @@
 					<input type="checkbox" name="use_hls" id="use_hls" {% if prefs.use_hls=="on" %}checked{% endif %}>
 				</div>
 				<div class="prefs-group">
+					<label for="hide_score">Hide score</label>
+					<input type="hidden" value="off" name="hide_score">
+					<input type="checkbox" name="hide_score" id="hide_score" {% if prefs.hide_score=="on" %}checked{%
+						endif %}>
+				</div>
+				<div class="prefs-group">
 					<label for="hide_hls_notification">Hide notification about possible HLS usage</label>
 					<input type="hidden" value="off" name="hide_hls_notification">
 					<input type="checkbox" name="hide_hls_notification" id="hide_hls_notification" {% if
@@ -171,10 +174,52 @@
 						endif %}>
 				</div>
 				<div class="prefs-group">
-					<label for="hide_score">Hide score</label>
-					<input type="hidden" value="off" name="hide_score">
-					<input type="checkbox" name="hide_score" id="hide_score" {% if prefs.hide_score=="on" %}checked{%
-						endif %}>
+					<label for="video_quality">Video quality:</label>
+					<select name="video_quality" id="video_quality">
+						{% call utils::options(prefs.video_quality, ["best", "medium", "worst"], "best") %}
+					</select>
+				</div>
+				<div class="prefs-group">
+					<label for="autoplay_videos">Autoplay videos</label>
+					<input type="hidden" value="off" name="autoplay_videos">
+					<input type="checkbox" name="autoplay_videos" id="autoplay_videos" {% if prefs.autoplay_videos=="on"
+						%}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="show_only_media" title="In feeds, show only posts with image, video, gif, or gallery">Show only media posts</label>
+					<input type="hidden" value="off" name="show_only_media">
+					<input type="checkbox" name="show_only_media" id="show_only_media" {% if prefs.show_only_media=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="low_data" title="Prefer smaller preview images in galleries to use less data">Low data (smaller gallery images)</label>
+					<input type="hidden" value="off" name="low_data">
+					<input type="checkbox" name="low_data" id="low_data" {% if prefs.low_data=="on" %}checked{% endif %}>
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>Interface</legend>
+				<div class="prefs-group">
+					<label for="front_page">Front page:</label>
+					<select name="front_page" id="front_page">
+						{% call utils::options(prefs.front_page, ["default", "popular", "all"], "default") %}
+					</select>
+				</div>
+				<div class="prefs-group">
+					<label for="fixed_navbar">Keep navbar fixed</label>
+					<input type="hidden" value="off" name="fixed_navbar">
+					<input type="checkbox" name="fixed_navbar" {% if prefs.fixed_navbar=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="hide_sidebar_and_summary">Hide the summary and sidebar</label>
+					<input type="hidden" value="off" name="hide_sidebar_and_summary">
+					<input type="checkbox" name="hide_sidebar_and_summary" {% if prefs.hide_sidebar_and_summary=="on"
+						%}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="remove_default_feeds">Remove default feeds</label>
+					<input type="hidden" value="off" name="remove_default_feeds">
+					<input type="checkbox" name="remove_default_feeds" id="remove_default_feeds" {% if
+						prefs.remove_default_feeds=="on" %}checked{% endif %}>
 				</div>
 				<div class="prefs-group">
 					<label for="disable_visit_reddit_confirmation">Do not confirm before visiting content on
@@ -182,6 +227,14 @@
 					<input type="hidden" value="off" name="disable_visit_reddit_confirmation">
 					<input type="checkbox" name="disable_visit_reddit_confirmation" {% if
 						prefs.disable_visit_reddit_confirmation=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="enable_offline" title="Cache CSS, JS, and images so pages load from cache when offline or slow">Enable offline caching</label>
+					<input type="hidden" value="off" name="enable_offline">
+					<input type="checkbox" name="enable_offline" id="enable_offline" {% if prefs.enable_offline=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group" id="clear_cache_wrap">
+					<button type="button" id="clear_offline_cache_btn" title="Clear cached static assets (e.g. after enabling offline)">Clear offline cache</button>
 				</div>
 			</fieldset>
 			<fieldset>
@@ -294,6 +347,42 @@
 	}
 	search.addEventListener("input", filter);
 	search.addEventListener("search", filter);
+})();
+(function () {
+	var select = document.getElementById("theme");
+	var grid = document.getElementById("theme_grid");
+	if (!select || !grid) return;
+
+	function prettyThemeName(value) {
+		if (!value) return "";
+		return value
+			.replace(/([a-z])([A-Z])/g, "$1 $2")
+			.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+			.replace(/[-_]+/g, " ")
+			.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+	}
+
+	grid.querySelectorAll(".theme_tile").forEach(function (tile) {
+		var label = tile.querySelector(".theme_tile_label");
+		if (label) label.textContent = prettyThemeName(label.textContent);
+		tile.addEventListener("click", function () {
+			var theme = tile.getAttribute("data-theme-name") || "";
+			select.value = theme;
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+		});
+	});
+
+	function syncThemeSelection() {
+		var value = select.value || "system";
+		grid.querySelectorAll(".theme_tile").forEach(function (tile) {
+			var selected = (tile.getAttribute("data-theme-name") || "") === value;
+			tile.classList.toggle("selected", selected);
+			tile.setAttribute("aria-pressed", selected ? "true" : "false");
+		});
+	}
+
+	select.addEventListener("change", syncThemeSelection);
+	syncThemeSelection();
 })();
 (function () {
 	var btn = document.getElementById("clear_offline_cache_btn");

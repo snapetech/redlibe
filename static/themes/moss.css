@@ -1,0 +1,15 @@
+/* Moss theme setting */
+.moss {
+	--accent: #95c46b;
+	--green: #b1d989;
+	--text: #d9dfcc;
+	--foreground: #182016;
+	--background: #121811;
+	--outside: #1e281c;
+	--post: #171f15;
+	--panel-border: 1px solid #2e3d2a;
+	--highlighted: #263323;
+	--visited: #a3ad98;
+	--muted: #a3ad98;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.52);
+}
