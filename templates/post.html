@@ -54,7 +54,13 @@
 		{% if reader_mode %}
 		<p class="reader_mode_bar"><a href="{{ url_without_query }}">← Exit reader mode</a></p>
 		{% else %}
-		<p class="reader_mode_bar"><a href="{{ url }}?reader=1">Reader mode</a></p>
+		<div class="thread_toolbar">
+			<a href="/r/{{ post.community }}" class="thread_back">← r/{{ post.community }}</a>
+			<div class="thread_toolbar_right">
+				<a href="{{ url }}?reader=1" class="thread_ctrl_btn">Reader mode</a>
+				<a {% if prefs.disable_visit_reddit_confirmation != "on" %}href="#popup"{% else %}href="https://reddit.com{{ post.permalink }}" rel="nofollow"{% endif %} class="thread_ctrl_btn">Open on Reddit</a>
+			</div>
+		</div>
 		{% endif %}
 		{% call utils::post(post) %}
 

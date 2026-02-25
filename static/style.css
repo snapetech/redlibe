@@ -3836,3 +3836,163 @@ a.feeds_manage { font-size: 0.9rem; margin-top: 0.5rem; display: inline-block; }
 .edit_delete_form { margin-left: 0.5rem; }
 .comment_actions .edit_comment_details { margin-left: 0.5rem; display: inline; }
 .comment_actions .edit_form { display: block; margin-top: 0.5rem; }
+
+/* ── UX v1 rework ─────────────────────────────────────────── */
+
+/* Post type badge (img / vid / album / link) */
+.post_type_tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    vertical-align: middle;
+    line-height: 1.6;
+    flex-shrink: 0;
+}
+.post_type_image {
+    background: color-mix(in srgb, #4a9eff 16%, var(--outside) 84%);
+    color: #4a9eff;
+}
+.post_type_video,
+.post_type_gif {
+    background: color-mix(in srgb, #ff6b4a 16%, var(--outside) 84%);
+    color: #ff6b4a;
+}
+.post_type_gallery {
+    background: color-mix(in srgb, #a855f7 16%, var(--outside) 84%);
+    color: #a855f7;
+}
+.post_type_link {
+    background: color-mix(in srgb, #22c55e 14%, var(--outside) 86%);
+    color: color-mix(in srgb, #16a34a 80%, var(--text) 20%);
+}
+
+/* Domain chip for link posts */
+.post_domain {
+    font-size: 11px;
+    opacity: 0.78;
+    color: color-mix(in srgb, var(--accent) 70%, var(--text) 30%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 18ch;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* OP badge: append "OP" label after the author name */
+.comment_author.op::after {
+    content: "OP";
+    display: inline-block;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 1px 4px;
+    margin-left: 4px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 16%, var(--outside) 84%);
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    color: var(--accent);
+    vertical-align: middle;
+    line-height: 1.5;
+}
+
+/* Tree lines: slightly warmer, with hover highlight */
+.line {
+    width: 2px;
+    height: 100%;
+    background: color-mix(in srgb, var(--foreground) 55%, transparent);
+    border-radius: 1px;
+    transition: background 0.15s ease;
+    cursor: pointer;
+}
+.comment:hover > .comment_left > .line {
+    background: color-mix(in srgb, var(--accent) 42%, var(--outside) 58%);
+}
+
+/* Thread toolbar (back link + quick controls above the post) */
+.thread_toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 12px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--outside) 82%, var(--post) 18%);
+    border: var(--panel-border);
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+.thread_back {
+    font-weight: 600;
+    color: var(--accent) !important;
+    opacity: 0.9;
+    white-space: nowrap;
+}
+.thread_back:hover {
+    opacity: 1;
+    text-decoration: none !important;
+}
+.thread_toolbar_right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.thread_ctrl_btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    background: color-mix(in srgb, var(--foreground) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--outside) 68%, var(--accent) 22%);
+    color: var(--text) !important;
+    opacity: 0.82;
+    white-space: nowrap;
+}
+.thread_ctrl_btn:hover {
+    opacity: 1;
+    text-decoration: none !important;
+    background: color-mix(in srgb, var(--highlighted) 82%, transparent);
+}
+/* Stick toolbar below fixed navbar */
+.fixed_navbar .thread_toolbar {
+    position: sticky;
+    top: 76px;
+    z-index: 1;
+}
+@media screen and (max-width: 800px) {
+    .fixed_navbar .thread_toolbar {
+        top: 112px;
+    }
+}
+
+/* Compact layout: hide type badge to save space */
+.compact .post_type_tag {
+    display: none;
+}
+
+/* Comment score: subtle hover tint */
+.comment_score {
+    transition: background 0.15s ease;
+}
+.comment:hover .comment_score {
+    background: color-mix(in srgb, var(--foreground) 80%, var(--accent) 20%);
+}
+
+/* Subreddit sidebar: open/close indicator arrow */
+details.panel[id="subreddit"] > summary::after {
+    content: " ▸";
+    opacity: 0.5;
+    font-size: 0.8em;
+}
+details.panel[id="subreddit"][open] > summary::after {
+    content: " ▾";
+}
+
+/* ── end UX v1 ────────────────────────────────────────────── */

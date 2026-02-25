@@ -291,7 +291,7 @@
 
 {% macro post_in_list(post) -%}
 {% set post_should_be_blurred = (post.flags.nsfw && prefs.blur_nsfw=="on") || (post.flags.spoiler && prefs.blur_spoiler=="on") -%}
-<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}" data-post-id="t3_{{ post.id }}" data-post-permalink="{{ post.permalink }}" data-post-title="{{ post.title }}" data-post-community="{{ post.community }}">
+<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}" data-post-id="t3_{{ post.id }}" data-post-type="{{ post.post_type }}" data-post-permalink="{{ post.permalink }}" data-post-title="{{ post.title }}" data-post-community="{{ post.community }}">
 	<p class="post_header">
 		{% let community -%}
 		{% if post.community.starts_with("u_") -%}
@@ -304,6 +304,13 @@
 		<a class="post_author {{ post.author.distinguished }}" href="/u/{{ post.author.name }}">u/{{ post.author.name }}</a>
 		<span class="dot">&bull;</span>
 		<span class="created" title="{{ post.created }}">{{ post.rel_time }}</span>
+		{% if post.post_type == "link" %}
+		<span class="dot">&bull;</span>
+		<span class="post_domain">{{ post.domain }}</span>
+		{% endif %}
+		{% if post.post_type != "self" %}
+		<span class="post_type_tag post_type_{{ post.post_type }}">{% if post.post_type == "image" %}img{% else if post.post_type == "video" || post.post_type == "gif" %}vid{% else if post.post_type == "gallery" %}album{% else if post.post_type == "link" %}link{% endif %}</span>
+		{% endif %}
 		{% if !post.awards.is_empty() && prefs.hide_awards != "on" %}
 			{% for award in post.awards.clone() %}
 			<span class="award" title="{{ award.name }}">
