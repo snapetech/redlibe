@@ -12,7 +12,7 @@ use percent_encoding::{percent_encode, CONTROLS};
 use serde_json::Value;
 
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicU16};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU32};
 use std::sync::LazyLock;
 use std::{io, result::Result};
 
@@ -73,11 +73,108 @@ pub static OAUTH_CLIENT: LazyLock<ArcSwap<Oauth>> = LazyLock::new(|| {
 pub static OAUTH_RATELIMIT_REMAINING: AtomicU16 = AtomicU16::new(99);
 
 pub static OAUTH_IS_ROLLING_OVER: AtomicBool = AtomicBool::new(false);
+static UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS: AtomicI64 = AtomicI64::new(0);
+static UPSTREAM_CONSECUTIVE_FAILURES: AtomicU32 = AtomicU32::new(0);
+static UPSTREAM_FAILURE_403_HTML: AtomicU32 = AtomicU32::new(0);
+static UPSTREAM_FAILURE_429: AtomicU32 = AtomicU32::new(0);
+static UPSTREAM_FAILURE_PARSE: AtomicU32 = AtomicU32::new(0);
+static UPSTREAM_FAILURE_TRANSPORT: AtomicU32 = AtomicU32::new(0);
+static UPSTREAM_SUCCESS_COUNT: AtomicU32 = AtomicU32::new(0);
 
 const URL_PAIRS: [(&str, &str); 2] = [
 	(ALTERNATIVE_REDDIT_URL_BASE, ALTERNATIVE_REDDIT_URL_BASE_HOST),
 	(REDDIT_SHORT_URL_BASE, REDDIT_SHORT_URL_BASE_HOST),
 ];
+
+const JSON_RETRY_ATTEMPTS: u8 = 3;
+const JSON_BACKOFF_BASE_MS: u64 = 150;
+const UPSTREAM_CIRCUIT_TRIP_FAILURES: u32 = 6;
+const UPSTREAM_CIRCUIT_OPEN_SECS: i64 = 20;
+
+fn now_epoch_secs() -> i64 {
+	time::OffsetDateTime::now_utc().unix_timestamp()
+}
+
+fn log_upstream_event(path: &str, event: &str, status: Option<u16>, attempt: u8, detail: &str) {
+	warn!(
+		"upstream_event event={event} status={} attempt={} path={} detail={}",
+		status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string()),
+		attempt,
+		path,
+		detail.replace('\n', " ")
+	);
+}
+
+fn on_upstream_success() {
+	UPSTREAM_CONSECUTIVE_FAILURES.store(0, Ordering::SeqCst);
+	UPSTREAM_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+
+fn on_upstream_failure(path: &str, category: &str, status: Option<u16>, attempt: u8, detail: &str) {
+	match category {
+		"html_403" => {
+			UPSTREAM_FAILURE_403_HTML.fetch_add(1, Ordering::SeqCst);
+		}
+		"http_429" => {
+			UPSTREAM_FAILURE_429.fetch_add(1, Ordering::SeqCst);
+		}
+		"parse" => {
+			UPSTREAM_FAILURE_PARSE.fetch_add(1, Ordering::SeqCst);
+		}
+		"transport" => {
+			UPSTREAM_FAILURE_TRANSPORT.fetch_add(1, Ordering::SeqCst);
+		}
+		_ => {}
+	}
+	let failures = UPSTREAM_CONSECUTIVE_FAILURES.fetch_add(1, Ordering::SeqCst) + 1;
+	log_upstream_event(path, category, status, attempt, detail);
+	if failures >= UPSTREAM_CIRCUIT_TRIP_FAILURES {
+		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.store(now_epoch_secs() + UPSTREAM_CIRCUIT_OPEN_SECS, Ordering::SeqCst);
+	}
+}
+
+fn upstream_circuit_message(path: &str) -> Option<String> {
+	let open_until = UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::SeqCst);
+	let now = now_epoch_secs();
+	if open_until > now {
+		let remaining = open_until - now;
+		return Some(format!(
+			"Reddit upstream is temporarily failing repeatedly (circuit breaker open for ~{remaining}s). \
+			 Please retry shortly or log in so requests can use your account token. | {path}"
+		));
+	}
+	None
+}
+
+fn should_retry_json_error(msg: &str) -> bool {
+	msg.contains("Couldn't send request to Reddit")
+		|| msg.contains("Failed receiving body from Reddit")
+		|| msg.contains("Reddit rate limit exceeded")
+		|| msg.contains("HTTP 429")
+		|| msg.contains("HTTP 403")
+		|| msg.contains("Reddit is having issues")
+		|| msg.contains("anonymous OAuth flow may be failing")
+}
+
+async fn sleep_backoff_with_jitter(attempt: u8) {
+	let factor = 1u64 << attempt.saturating_sub(1);
+	let jitter = fastrand::u64(0..JSON_BACKOFF_BASE_MS);
+	let delay = JSON_BACKOFF_BASE_MS.saturating_mul(factor).saturating_add(jitter);
+	tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+}
+
+pub fn upstream_metrics_snapshot_json() -> String {
+	format!(
+		r#"{{"success":{},"consecutive_failures":{},"html_403":{},"http_429":{},"parse":{},"transport":{},"circuit_open_until":{}}}"#,
+		UPSTREAM_SUCCESS_COUNT.load(Ordering::Relaxed),
+		UPSTREAM_CONSECUTIVE_FAILURES.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_403_HTML.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_429.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_PARSE.load(Ordering::Relaxed),
+		UPSTREAM_FAILURE_TRANSPORT.load(Ordering::Relaxed),
+		UPSTREAM_CIRCUIT_OPEN_UNTIL_EPOCH_SECS.load(Ordering::Relaxed)
+	)
+}
 
 /// Gets the canonical path for a resource on Reddit. This is accomplished by
 /// making a `HEAD` request to Reddit at the path given in `path`.
@@ -188,7 +285,7 @@ async fn stream(url: &str, req: &Request<Body>) -> Result<Response<Body>, String
 	let mut builder = Request::get(parsed_uri);
 
 	// Copy useful headers from original request
-	for &key in &["Range", "If-Modified-Since", "Cache-Control"] {
+	for &key in &["Range", "If-Modified-Since", "If-None-Match", "Cache-Control"] {
 		if let Some(value) = req.headers().get(key) {
 			builder = builder.header(key, value);
 		}
@@ -208,7 +305,6 @@ async fn stream(url: &str, req: &Request<Body>) -> Result<Response<Body>, String
 			rm("access-control-expose-headers");
 			rm("server");
 			rm("vary");
-			rm("etag");
 			rm("x-cdn");
 			rm("x-cdn-client-region");
 			rm("x-cdn-name");
@@ -400,6 +496,32 @@ fn request(method: &'static Method, path: String, redirect: bool, quarantine: bo
 /// Make a request to a Reddit API and parse the JSON response
 #[cached(size = 100, time = 30, result = true)]
 pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
+	// Fail fast during known upstream brownouts to avoid dogpiling Reddit.
+	if let Some(msg) = upstream_circuit_message(&path) {
+		return Err(msg);
+	}
+
+	let mut last_err: Option<String> = None;
+	for attempt in 1..=JSON_RETRY_ATTEMPTS {
+		match json_once(path.clone(), quarantine, attempt).await {
+			Ok(v) => {
+				on_upstream_success();
+				return Ok(v);
+			}
+			Err(e) => {
+				last_err = Some(e.clone());
+				if attempt < JSON_RETRY_ATTEMPTS && should_retry_json_error(&e) {
+					sleep_backoff_with_jitter(attempt).await;
+					continue;
+				}
+				return Err(e);
+			}
+		}
+	}
+	Err(last_err.unwrap_or_else(|| format!("Unknown Reddit JSON fetch error | {path}")))
+}
+
+async fn json_once(path: String, quarantine: bool, attempt: u8) -> Result<Value, String> {
 	// Closure to quickly build errors
 	let err = |msg: &str, e: String, path: String| -> Result<Value, String> {
 		// eprintln!("{} - {}: {}", url, msg, e);
@@ -419,6 +541,9 @@ pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
 	match reddit_get(path.clone(), quarantine).await {
 		Ok(response) => {
 			let status = response.status();
+			if status.as_u16() == 429 {
+				on_upstream_failure(&path, "http_429", Some(429), attempt, "rate limited");
+			}
 
 			let reset: Option<String> = if let (Some(remaining), Some(reset), Some(used)) = (
 				response.headers().get("x-ratelimit-remaining").and_then(|val| val.to_str().ok().map(|s| s.to_string())),
@@ -506,28 +631,41 @@ pub async fn json(path: String, quarantine: bool) -> Result<Value, String> {
 							Err(e) => {
 								error!("Got an invalid response from reddit {e}. Status code: {status}");
 								if status.is_server_error() {
+									on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "server error + invalid json");
 									return Err("Reddit is having issues, check if there's an outage".to_string());
 								}
 								// Provide a clearer message when Reddit returns HTML or empty body
 								let hint = if bytes.is_empty() {
 									format!("Reddit returned an empty response (HTTP {status}).")
 								} else if bytes.first().copied() == Some(b'<') {
+									if status.as_u16() == 403 {
+										on_upstream_failure(&path, "html_403", Some(403), attempt, "html instead of json");
+									} else {
+										on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "html instead of json");
+									}
 									format!(
 										"Reddit returned an HTML page instead of JSON (HTTP {status}). \
 										The instance may be blocked, rate limited, or the anonymous OAuth flow may be failing. \
 										See https://github.com/redlib-org/redlib/issues/446"
 									)
 								} else {
+									on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "json parse error");
 									format!("{e} | {path}")
 								};
 								err("Failed to parse page JSON data", hint, path)
 							}
 						}
 					}
-					Err(e) => err("Failed receiving body from Reddit", e.to_string(), path),
+					Err(e) => {
+						on_upstream_failure(&path, "transport", Some(status.as_u16()), attempt, "body receive failed");
+						err("Failed receiving body from Reddit", e.to_string(), path)
+					}
 				}
 		}
-		Err(e) => err("Couldn't send request to Reddit", e, path),
+		Err(e) => {
+			on_upstream_failure(&path, "transport", None, attempt, &e);
+			err("Couldn't send request to Reddit", e, path)
+		}
 	}
 }
 

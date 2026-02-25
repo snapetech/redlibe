@@ -17,6 +17,9 @@
 		<label for="settings_search">Search settings:</label>
 		<input type="search" id="settings_search" placeholder="Filter by name..." autocomplete="off">
 	</div>
+	<p class="helper" style="margin: 0 0 12px;">
+		These are <strong>your browser preferences</strong> (saved in cookies). Instance admins set server defaults with environment variables, but your selections here override those defaults for this browser.
+	</p>
 	<form action="/settings" method="POST">
 		<div class="prefs">
 			<fieldset>
@@ -290,37 +293,47 @@
 	{% endif %}
 
 	<div id="settings_note">
+		{% match prefs.to_urlencoded() %}
+		{% when Ok with (encoded_prefs) %}
+		<input type="hidden" id="current_prefs_urlencoded" value="{{ encoded_prefs }}">
+		{% when Err with (_) %}{% endmatch %}
 		<p><b>Note:</b> settings and subscriptions are saved in browser cookies. Clearing your cookies will reset them.
 		</p>
 		<br>
+		<div class="settings_export_actions">
+			<a class="settings_action_btn" href="/settings/export-json">Export JSON</a>
+			<a class="settings_action_btn" href="/settings/export-env">Export .env-style</a>
+		</div>
 		{% match prefs.to_urlencoded() %}
 		{% when Ok with (encoded_prefs) %}
 		<p>You can restore your current settings and subscriptions after clearing your cookies using <a
 				href="/settings/restore/?{{ encoded_prefs }}">this link</a>.</p>
+		<div class="settings_export_actions">
+			<a class="settings_action_btn" href="/settings/restore/?{{ encoded_prefs }}">Open restore link now</a>
+		</div>
 		{% when Err with (err) %}
 		<p>There was an error creating your restore link: {{ err }}</p>
 		<p>Please report this issue</p>
 		{% endmatch %}
 		<br />
-		<div>
+		<div class="settings_transfer_block">
 			<script src="/copy.js"></script>
 			<label for="bincode_str">Or, export/import here (be sure to save first):</label>
 			<br />
 			<input type="text" id="bincode_str" name="bincode_str"
 				value="{% match prefs.to_bincode_str() %}{% when Ok with (bincode_str) %}{{ bincode_str }}{% when Err with (err) %}Error: {{ err }}{% endmatch %}"
 				readonly>
-			<button id="copy" class="copy">Copy</button>
-			<span style="margin-left:1em"><a href="/settings/export-json" download="redlib-settings.json">Export as JSON</a></span>
+			<button id="copy" class="copy settings_inline_btn">Copy</button>
 
 			<br />
 			<form action="/settings/encoded-restore/" method="POST">
 				<input type="text" id="encoded_prefs" name="encoded_prefs" value=""
 					placeholder="Paste your encoded settings here">
-				<button class="import" type="submit">Import (encoded)</button>
+				<button class="import settings_inline_btn" type="submit">Import (encoded)</button>
 			</form>
 			<form action="/settings/import-json" method="POST" style="margin-top:8px">
 				<textarea name="json" rows="4" placeholder="Paste JSON settings here" style="width:100%; max-width:400px"></textarea>
-				<button type="submit">Import (JSON)</button>
+				<button type="submit" class="settings_inline_btn">Import (JSON)</button>
 			</form>
 		</div>
 	</div>

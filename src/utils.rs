@@ -372,8 +372,14 @@ pub struct Post {
 impl Post {
 	/// Parse a Reddit listing JSON (data.children + data.after) into posts and after cursor.
 	pub async fn parse_listing(res: &Value) -> Result<(Vec<Self>, String), String> {
+		if !res.is_object() {
+			return Err("Unexpected Reddit response shape (top-level JSON object missing)".to_string());
+		}
+		if !res.get("data").map(Value::is_object).unwrap_or(false) {
+			return Err("Unexpected Reddit response shape (missing data object)".to_string());
+		}
 		let Some(post_list) = res["data"]["children"].as_array() else {
-			return Err("No posts found".to_string());
+			return Err("Unexpected Reddit response shape (missing data.children array)".to_string());
 		};
 		let mut posts: Vec<Self> = Vec::new();
 		for post in post_list {
@@ -1705,6 +1711,11 @@ pub fn redirect(path: &str) -> Response<Body> {
 pub async fn error(req: Request<Body>, msg: &str) -> Result<Response<Body>, String> {
 	error!("Error page rendered: {}", msg.split('|').next().unwrap_or_default());
 	let url = req.uri().to_string();
+	let is_upstream_failure = msg.contains("Failed to parse page JSON data")
+		|| msg.contains("Couldn't send request to Reddit")
+		|| msg.contains("Reddit rate limit exceeded")
+		|| msg.contains("temporarily failing repeatedly")
+		|| msg.contains("Reddit is having issues");
 	let body = ErrorTemplate {
 		msg: msg.to_string(),
 		prefs: Preferences::new(&req),
@@ -1713,7 +1724,11 @@ pub async fn error(req: Request<Body>, msg: &str) -> Result<Response<Body>, Stri
 	.render()
 	.unwrap_or_default();
 
-	Ok(Response::builder().status(404).header("content-type", "text/html").body(body.into()).unwrap_or_default())
+	Ok(Response::builder()
+		.status(if is_upstream_failure { 503 } else { 404 })
+		.header("content-type", "text/html")
+		.body(body.into())
+		.unwrap_or_default())
 }
 
 /// Renders a generic info landing page.

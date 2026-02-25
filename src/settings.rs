@@ -325,6 +325,29 @@ pub async fn export_json(req: Request<Body>) -> Result<Response<Body>, String> {
 		.unwrap_or_default())
 }
 
+/// GET /settings/export-env: return current preferences as REDLIB_* lines (user-shareable profile format).
+pub async fn export_env(req: Request<Body>) -> Result<Response<Body>, String> {
+	let prefs = Preferences::new(&req);
+	let encoded = prefs.to_urlencoded().map_err(|e| e.to_string())?;
+	let mut out = String::from("# Redlib user settings export (.env-style)\n");
+	out.push_str("# Import manually by mapping values into cookies or use /settings restore URL/JSON import.\n");
+	for (key, value) in form_urlencoded::parse(encoded.as_bytes()) {
+		if key == "available_themes" || key == "logged_in" || key == "username" || key == "csrf_token" {
+			continue;
+		}
+		let env_key = format!("REDLIB_PREF_{}", key.to_ascii_uppercase());
+		let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+		out.push_str(&format!(r#"{env_key}="{escaped}""#));
+		out.push('\n');
+	}
+	Ok(Response::builder()
+		.status(200)
+		.header("Content-Type", "text/plain; charset=utf-8")
+		.header("Content-Disposition", "attachment; filename=\"redlib-user-prefs.env\"")
+		.body(out.into())
+		.unwrap_or_default())
+}
+
 /// POST /settings/import-json: body is JSON preferences (or form field "json"). Redirects to restore to set cookies.
 pub async fn import_json(req: Request<Body>) -> Result<Response<Body>, String> {
 	let body = hyper::body::to_bytes(req.into_body())

@@ -11,7 +11,7 @@ use futures_lite::FutureExt;
 use hyper::Uri;
 use hyper::{header::HeaderValue, Body, Request, Response};
 use log::{info, warn};
-use redlib::client::{canonical_path, proxy, rate_limit_check, CLIENT};
+use redlib::client::{canonical_path, proxy, rate_limit_check, upstream_metrics_snapshot_json, CLIENT};
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
 use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, submit, subreddit, user, vote};
@@ -263,6 +263,17 @@ async fn main() {
 		.get(|_| resource(include_str!("../static/check_update.js"), "text/javascript", false).boxed());
 	app.at("/copy.js").get(|_| resource(include_str!("../static/copy.js"), "text/javascript", false).boxed());
 	app.at("/settings.js").get(|_| resource(include_str!("../static/settings.js"), "text/javascript", false).boxed());
+	app.at("/power.js").get(|_| resource(include_str!("../static/power.js"), "text/javascript", false).boxed());
+	app.at("/upstream-metrics.json").get(|_| async {
+		Ok::<Response<Body>, String>(
+			Response::builder()
+				.status(200)
+				.header("content-type", "application/json")
+				.header("Cache-Control", "no-store")
+				.body(upstream_metrics_snapshot_json().into())
+				.unwrap_or_default(),
+		)
+	}.boxed());
 
 	app.at("/commits.atom").get(|_| async move { proxy_commit_info().await }.boxed());
 	app.at("/instances.json").get(|_| async move { proxy_instances().await }.boxed());
@@ -303,6 +314,7 @@ async fn main() {
 	app.at("/settings/restore").get(|r| settings::restore(r).boxed());
 	app.at("/settings/encoded-restore").post(|r| settings::encoded_restore(r).boxed());
 	app.at("/settings/export-json").get(|r| settings::export_json(r).boxed());
+	app.at("/settings/export-env").get(|r| settings::export_env(r).boxed());
 	app.at("/settings/import-json").post(|r| settings::import_json(r).boxed());
 	app.at("/settings/update").get(|r| settings::update(r).boxed());
 

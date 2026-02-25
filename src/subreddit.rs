@@ -16,7 +16,11 @@ use hyper::{Body, Request, Response};
 
 use chrono::DateTime;
 use regex::Regex;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 use std::sync::LazyLock;
+use std::time::{Duration as StdDuration, Instant};
 use time::{Duration, OffsetDateTime};
 
 const MAX_MARK_READ_BODY: usize = 64 * 1024;
@@ -64,9 +68,95 @@ struct WallTemplate {
 }
 
 static GEO_FILTER_MATCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"geo_filter=(?<region>\w+)").unwrap());
+static ANON_LISTING_RENDER_CACHE: LazyLock<Mutex<HashMap<String, (Instant, String)>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+const ANON_LISTING_RENDER_CACHE_TTL: StdDuration = StdDuration::from_secs(12);
+
+fn hashable_settings_signature(req: &Request<Body>) -> String {
+	let keys = [
+		"theme",
+		"layout",
+		"wide",
+		"font_size",
+		"fixed_navbar",
+		"use_hls",
+		"autoplay_videos",
+		"hide_awards",
+		"hide_score",
+		"show_nsfw",
+		"blur_nsfw",
+		"blur_spoiler",
+		"show_only_media",
+		"hide_read",
+		"front_page",
+		"post_sort",
+		"remove_default_feeds",
+		"subscriptions",
+		"filters",
+		"custom_feeds",
+		"filter_keywords",
+		"filter_flairs",
+		"filter_domains",
+	];
+	let mut out = String::new();
+	for key in keys {
+		out.push_str(key);
+		out.push('=');
+		out.push_str(&setting(req, key));
+		out.push(';');
+	}
+	out
+}
+
+fn anon_listing_render_cache_key(req: &Request<Body>) -> Option<String> {
+	if AuthContext::from_request(req).is_authenticated() {
+		return None;
+	}
+	let path_and_query = req.uri().path_and_query()?.as_str().to_string();
+	if path_and_query.contains("after=") || path_and_query.contains("before=") {
+		return None;
+	}
+	let mut hasher = std::collections::hash_map::DefaultHasher::new();
+	path_and_query.hash(&mut hasher);
+	hashable_settings_signature(req).hash(&mut hasher);
+	Some(format!("listing:{:x}", hasher.finish()))
+}
+
+fn render_cache_get(key: &str) -> Option<Response<Body>> {
+	let mut cache = ANON_LISTING_RENDER_CACHE.lock().ok()?;
+	if let Some((inserted, html)) = cache.get(key) {
+		if inserted.elapsed() <= ANON_LISTING_RENDER_CACHE_TTL {
+			return Some(
+				Response::builder()
+					.status(200)
+					.header("content-type", "text/html")
+					.header("X-Redlib-Render-Cache", "HIT")
+					.body(html.clone().into())
+					.unwrap_or_default(),
+			);
+		}
+	}
+	cache.remove(key);
+	None
+}
+
+fn render_cache_put(key: &str, html: String) {
+	if let Ok(mut cache) = ANON_LISTING_RENDER_CACHE.lock() {
+		if cache.len() > 128 {
+			cache.retain(|_, (t, _)| t.elapsed() <= ANON_LISTING_RENDER_CACHE_TTL);
+		}
+		cache.insert(key.to_string(), (Instant::now(), html));
+	}
+}
 
 // SERVICES
 pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
+	let render_cache_key = anon_listing_render_cache_key(&req);
+	if let Some(key) = render_cache_key.as_deref() {
+		if let Some(hit) = render_cache_get(key) {
+			return Ok(hit);
+		}
+	}
+
 	// Build Reddit API path
 	let root = req.uri().path() == "/";
 	let query = req.uri().query().unwrap_or_default().to_string();
@@ -153,7 +243,7 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	// If all requested subs are filtered, we don't need to fetch posts.
 	if sub_name.split('+').all(|s| filters.contains(s)) {
-		Ok(template(&SubredditTemplate {
+		let page = SubredditTemplate {
 			sub,
 			posts: Vec::new(),
 			sort: (sort, param(&path, "t").unwrap_or_default()),
@@ -165,7 +255,12 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 			all_posts_filtered: false,
 			all_posts_hidden_nsfw: false,
 			no_posts: false,
-		}))
+		};
+		let html = page.render().unwrap_or_default();
+		if let Some(key) = render_cache_key.as_deref() {
+			render_cache_put(key, html.clone());
+		}
+		Ok(Response::builder().status(200).header("content-type", "text/html").body(html.into()).unwrap_or_default())
 	} else {
 		match Post::fetch(&path, quarantined).await {
 			Ok((mut posts, after)) => {
@@ -184,7 +279,7 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 					posts.sort_by(|a, b| b.created_ts.cmp(&a.created_ts));
 					posts.sort_by(|a, b| b.flags.stickied.cmp(&a.flags.stickied));
 				}
-				Ok(template(&SubredditTemplate {
+				let page = SubredditTemplate {
 					sub,
 					posts,
 					sort: (sort, param(&path, "t").unwrap_or_default()),
@@ -196,7 +291,12 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 					all_posts_filtered,
 					all_posts_hidden_nsfw,
 					no_posts,
-				}))
+				};
+				let html = page.render().unwrap_or_default();
+				if let Some(key) = render_cache_key.as_deref() {
+					render_cache_put(key, html.clone());
+				}
+				Ok(Response::builder().status(200).header("content-type", "text/html").body(html.into()).unwrap_or_default())
 			}
 			Err(msg) => match msg.as_str() {
 				"quarantined" | "gated" => Ok(quarantine(&req, sub_name, &msg)),

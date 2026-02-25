@@ -4,6 +4,23 @@
 {% block content %}
 <div id="error">
 	<h1>{{ msg }}</h1>
+	{% if msg.contains("Failed to parse page JSON data") || msg.contains("Reddit rate limit exceeded") || msg.contains("temporarily failing repeatedly") || msg.contains("Couldn't send request to Reddit") %}
+	<div class="helper" style="margin: 0 auto 16px; max-width: 760px; text-align: left;">
+		<strong>Reddit is blocking or failing this request right now.</strong>
+		<p style="margin: 8px 0 0;">What you can do:</p>
+		<ul style="margin: 8px 0 0 20px;">
+			<li>Try again in 15-30 seconds (temporary block/rate limit).</li>
+			<li><a href="/login">Log in</a> so requests use your account token instead of shared anonymous access.</li>
+			<li>Open a specific subreddit/post URL instead of the homepage if only popular/all is failing.</li>
+		</ul>
+		<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;">
+			<a href="{{ url }}">Retry this page</a>
+			<a href="/r/popular/new">Try /r/popular/new</a>
+			<a href="/r/all/new">Try /r/all/new</a>
+			<a href="https://www.reddit.com{{ url }}" rel="nofollow">Open original on Reddit</a>
+		</div>
+	</div>
+	{% endif %}
 	<h3><a href="https://www.redditstatus.com/">Reddit Status</a></h3>
 	<br />
 	<h3 id="update-status"></h3>

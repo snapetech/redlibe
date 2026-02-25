@@ -1,0 +1,426 @@
+(function() {
+	"use strict";
+
+	var LS_READLATER = "redlib_power_readlater_v1";
+	var LS_PROFILES = "redlib_profiles_v1";
+	var palette;
+	var paletteInput;
+	var paletteList;
+
+	function safeJsonParse(s, fallback) {
+		try { return JSON.parse(s || ""); } catch (_) { return fallback; }
+	}
+
+	function loadReadLater() {
+		return safeJsonParse(localStorage.getItem(LS_READLATER), []);
+	}
+
+	function saveReadLater(items) {
+		localStorage.setItem(LS_READLATER, JSON.stringify(items.slice(0, 400)));
+	}
+
+	function loadProfiles() {
+		return safeJsonParse(localStorage.getItem(LS_PROFILES), []);
+	}
+
+	function saveProfiles(items) {
+		localStorage.setItem(LS_PROFILES, JSON.stringify(items.slice(0, 50)));
+	}
+
+	function getPostMeta(postEl) {
+		if (!postEl) return null;
+		var permalink = postEl.getAttribute("data-post-permalink") || "";
+		var title = postEl.getAttribute("data-post-title") || "";
+		var community = postEl.getAttribute("data-post-community") || "";
+		var id = postEl.getAttribute("data-post-id") || postEl.id || permalink;
+		if (!id || !permalink) return null;
+		return {
+			id: id,
+			permalink: permalink,
+			title: title,
+			community: community,
+			savedAt: Date.now(),
+			tags: []
+		};
+	}
+
+	function upsertReadLater(item) {
+		var items = loadReadLater();
+		var idx = items.findIndex(function(x) { return x.id === item.id; });
+		if (idx >= 0) {
+			items[idx] = Object.assign({}, items[idx], item);
+		} else {
+			items.unshift(item);
+		}
+		saveReadLater(items);
+		return items;
+	}
+
+	function removeReadLater(id) {
+		var items = loadReadLater().filter(function(x) { return x.id !== id; });
+		saveReadLater(items);
+		return items;
+	}
+
+	function findReadLater(id) {
+		return loadReadLater().find(function(x) { return x.id === id; }) || null;
+	}
+
+	function syncLocalToolButtons() {
+		document.querySelectorAll(".post").forEach(function(postEl) {
+			var meta = getPostMeta(postEl);
+			if (!meta) return;
+			var saved = findReadLater(meta.id);
+			var saveBtn = postEl.querySelector(".local_readlater_btn");
+			var tagBtn = postEl.querySelector(".local_tag_btn");
+			if (saveBtn) {
+				saveBtn.textContent = saved ? "Saved" : "Read later";
+				saveBtn.classList.toggle("active", !!saved);
+				saveBtn.setAttribute("aria-pressed", saved ? "true" : "false");
+			}
+			if (tagBtn) {
+				var tagLabel = saved && saved.tags && saved.tags.length ? ("Tag (" + saved.tags.join(", ") + ")") : "Tag";
+				tagBtn.textContent = tagLabel;
+			}
+		});
+	}
+
+	function attachLocalTools() {
+		document.addEventListener("click", function(e) {
+			var saveBtn = e.target.closest && e.target.closest(".local_readlater_btn");
+			if (saveBtn) {
+				e.preventDefault();
+				var postEl = saveBtn.closest(".post");
+				var meta = getPostMeta(postEl);
+				if (!meta) return;
+				var existing = findReadLater(meta.id);
+				if (existing) removeReadLater(meta.id);
+				else upsertReadLater(meta);
+				syncLocalToolButtons();
+				refreshPaletteCommands();
+				return;
+			}
+			var tagBtn = e.target.closest && e.target.closest(".local_tag_btn");
+			if (tagBtn) {
+				e.preventDefault();
+				var p = tagBtn.closest(".post");
+				var m = getPostMeta(p);
+				if (!m) return;
+				var ex = findReadLater(m.id) || m;
+				var current = (ex.tags || []).join(", ");
+				var input = window.prompt("Tags for this post (comma-separated)", current);
+				if (input === null) return;
+				ex.tags = input.split(",").map(function(s) { return s.trim(); }).filter(Boolean).slice(0, 12);
+				upsertReadLater(ex);
+				syncLocalToolButtons();
+				refreshPaletteCommands();
+			}
+		});
+		syncLocalToolButtons();
+	}
+
+	function ensurePalette() {
+		if (palette) return palette;
+		palette = document.createElement("div");
+		palette.className = "power_palette";
+		palette.hidden = true;
+		palette.innerHTML =
+			'<div class="power_palette_backdrop" data-close="1"></div>' +
+			'<div class="power_palette_panel" role="dialog" aria-modal="true" aria-label="Command palette">' +
+			'<div class="power_palette_header">' +
+			'<input id="power_palette_input" type="search" placeholder="Command palette (Ctrl/Cmd+K)" autocomplete="off">' +
+			'</div>' +
+			'<div class="power_palette_help">Shortcuts: Ctrl/Cmd+K open, j/k comments, [ collapse, ] expand, Shift+C collapse all, Shift+E expand all</div>' +
+			'<ul id="power_palette_list" class="power_palette_list" role="listbox"></ul>' +
+			'</div>';
+		document.body.appendChild(palette);
+		paletteInput = palette.querySelector("#power_palette_input");
+		paletteList = palette.querySelector("#power_palette_list");
+		palette.addEventListener("click", function(e) {
+			if (e.target && e.target.getAttribute("data-close") === "1") closePalette();
+			var item = e.target.closest(".power_palette_item");
+			if (item) {
+				var href = item.getAttribute("data-href");
+				var action = item.getAttribute("data-action");
+				if (action === "focus-search") {
+					var s = document.getElementById("search");
+					if (s) { s.focus(); s.select && s.select(); }
+					closePalette();
+				} else if (href) {
+					window.location.href = href;
+				}
+			}
+		});
+		paletteInput.addEventListener("input", renderPaletteList);
+		paletteInput.addEventListener("keydown", function(e) {
+			if (e.key === "Escape") { closePalette(); return; }
+			if (e.key === "Enter") {
+				var first = paletteList.querySelector(".power_palette_item:not([hidden])");
+				if (first) first.click();
+			}
+		});
+		return palette;
+	}
+
+	var paletteCommands = [];
+
+	function refreshPaletteCommands() {
+		var cmds = [
+			{ label: "Go: Home", href: "/" },
+			{ label: "Go: Popular", href: "/r/popular" },
+			{ label: "Go: All", href: "/r/all" },
+			{ label: "Go: Settings", href: "/settings" },
+			{ label: "Action: Focus Search", action: "focus-search" }
+		];
+		var loginLink = document.getElementById("login_link");
+		if (loginLink) cmds.push({ label: "Go: Login", href: loginLink.getAttribute("href") || "/login" });
+		loadReadLater().slice(0, 12).forEach(function(item) {
+			var tags = item.tags && item.tags.length ? " [" + item.tags.join(", ") + "]" : "";
+			cmds.push({ label: "Read later: " + (item.title || item.permalink) + tags, href: item.permalink });
+		});
+		paletteCommands = cmds;
+		renderPaletteList();
+	}
+
+	function renderPaletteList() {
+		if (!paletteList) return;
+		var q = ((paletteInput && paletteInput.value) || "").trim().toLowerCase();
+		paletteList.innerHTML = "";
+		paletteCommands.forEach(function(cmd) {
+			if (q && cmd.label.toLowerCase().indexOf(q) === -1) return;
+			var li = document.createElement("li");
+			li.className = "power_palette_item";
+			li.tabIndex = 0;
+			li.setAttribute("role", "option");
+			li.textContent = cmd.label;
+			if (cmd.href) li.setAttribute("data-href", cmd.href);
+			if (cmd.action) li.setAttribute("data-action", cmd.action);
+			li.addEventListener("keydown", function(e) { if (e.key === "Enter") li.click(); });
+			paletteList.appendChild(li);
+		});
+		if (!paletteList.children.length) {
+			var empty = document.createElement("li");
+			empty.className = "power_palette_empty";
+			empty.textContent = "No matching commands";
+			paletteList.appendChild(empty);
+		}
+	}
+
+	function openPalette() {
+		ensurePalette();
+		refreshPaletteCommands();
+		palette.hidden = false;
+		document.body.classList.add("power_palette_open");
+		setTimeout(function() { if (paletteInput) paletteInput.focus(); }, 0);
+	}
+
+	function closePalette() {
+		if (!palette) return;
+		palette.hidden = true;
+		document.body.classList.remove("power_palette_open");
+	}
+
+	function attachGlobalKeyboard() {
+		document.addEventListener("keydown", function(e) {
+			var target = e.target;
+			var typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+				e.preventDefault();
+				if (palette && !palette.hidden) closePalette(); else openPalette();
+				return;
+			}
+			if (typing) return;
+			if (e.key === "?") {
+				e.preventDefault();
+				openPalette();
+			}
+		});
+	}
+
+	function attachCommentPower() {
+		// Persist collapse state (CSP-safe replacement for inline script)
+		document.querySelectorAll("details.comment_right[data-comment-id]").forEach(function(details) {
+			if (details.getAttribute("data-power-bound") === "1") return;
+			details.setAttribute("data-power-bound", "1");
+			details.addEventListener("toggle", function() {
+				var id = details.getAttribute("data-comment-id");
+				if (!id) return;
+				var action = details.open ? "expand" : "collapse";
+				fetch("/comment-collapse", {
+					method: "POST",
+					headers: { "Content-Type": "application/x-www-form-urlencoded" },
+					body: "id=" + encodeURIComponent(id) + "&action=" + action,
+					credentials: "same-origin"
+				}).catch(function() {});
+			});
+		});
+
+		var threads = Array.prototype.slice.call(document.querySelectorAll(".thread[data-top-level-comment]"));
+		if (!threads.length) return;
+
+		function visibleThreadIndex() {
+			var i = threads.findIndex(function(t) { return t.getBoundingClientRect().top >= -10; });
+			return i < 0 ? 0 : i;
+		}
+		function scrollToThread(index) {
+			if (index >= 0 && index < threads.length) {
+				threads[index].scrollIntoView({ behavior: "smooth", block: "start" });
+				var firstDetails = threads[index].querySelector("details.comment_right");
+				if (firstDetails) firstDetails.focus();
+			}
+		}
+		function setThreadCollapsed(index, collapsed) {
+			var details = threads[index] && threads[index].querySelector("details.comment_right");
+			if (!details) return;
+			details.open = !collapsed;
+		}
+		document.addEventListener("keydown", function(e) {
+			var t = e.target;
+			if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+			if (e.key === "j") { e.preventDefault(); scrollToThread((visibleThreadIndex() + 1) % threads.length); }
+			else if (e.key === "k") { e.preventDefault(); scrollToThread((visibleThreadIndex() + threads.length - 1) % threads.length); }
+			else if (e.key === "[") { e.preventDefault(); setThreadCollapsed(visibleThreadIndex(), true); }
+			else if (e.key === "]") { e.preventDefault(); setThreadCollapsed(visibleThreadIndex(), false); }
+			else if (e.shiftKey && e.key === "C") {
+				e.preventDefault();
+				document.querySelectorAll("details.comment_right[data-comment-id]").forEach(function(d) { d.open = false; });
+			} else if (e.shiftKey && e.key === "E") {
+				e.preventDefault();
+				document.querySelectorAll("details.comment_right[data-comment-id]").forEach(function(d) { d.open = true; });
+			}
+		});
+	}
+
+	function attachMediaFallbacks() {
+		document.querySelectorAll("video.post_media_video").forEach(function(video) {
+			if (video.getAttribute("data-fallback-bound") === "1") return;
+			video.setAttribute("data-fallback-bound", "1");
+			video.addEventListener("error", function() {
+				var parent = video.closest(".post");
+				if (!parent) return;
+				if (parent.querySelector(".video_fallback_hint")) return;
+				var wrap = document.createElement("div");
+				wrap.className = "video_fallback_hint";
+				var permalink = parent.getAttribute("data-post-permalink") || "";
+				var direct = video.getAttribute("src") || "";
+				var source = video.querySelector('source[type="video/mp4"]');
+				if (!direct && source) direct = source.getAttribute("src") || "";
+				var alt = video.querySelector('source[type="application/vnd.apple.mpegurl"]');
+				var hls = alt ? (alt.getAttribute("src") || "") : "";
+				wrap.innerHTML =
+					'<strong>Video playback failed here.</strong> ' +
+					'<button type="button" class="vf_retry">Retry</button>' +
+					(permalink ? ' <a href="' + permalink + '">Open post</a>' : '') +
+					(direct ? ' <a rel="nofollow" href="' + direct + '">Open MP4</a>' : '') +
+					(hls ? ' <a rel="nofollow" href="' + hls + '">Open HLS</a>' : '');
+				var mediaContainer = video.closest(".post_media_content") || video.parentElement;
+				if (mediaContainer) mediaContainer.appendChild(wrap);
+				var retry = wrap.querySelector(".vf_retry");
+				if (retry) {
+					retry.addEventListener("click", function() {
+						try {
+							video.load();
+							video.play && video.play().catch(function() {});
+						} catch (_) {}
+					});
+				}
+			});
+		});
+	}
+
+	function attachSettingsProfiles() {
+		var note = document.getElementById("settings_note");
+		var settings = document.getElementById("settings");
+		if (!note || !settings) return;
+		var current = document.getElementById("current_prefs_urlencoded");
+		var panel = document.createElement("div");
+		panel.className = "settings_profiles_panel";
+		panel.innerHTML =
+			'<h3>Profiles</h3>' +
+			'<p>Save local profiles for subscriptions/filters/preferences (work, news, hobbies) without a Reddit account.</p>' +
+			'<div class="settings_profiles_actions">' +
+			'<input type="text" id="settings_profile_name" placeholder="Profile name (e.g. Work)">' +
+			'<button type="button" id="settings_profile_save">Save current profile</button>' +
+			'</div>' +
+			'<div id="settings_profiles_list" class="settings_profiles_list"></div>';
+		note.prepend(panel);
+
+		function renderProfiles() {
+			var list = panel.querySelector("#settings_profiles_list");
+			var profiles = loadProfiles();
+			list.innerHTML = "";
+			if (!profiles.length) {
+				list.innerHTML = '<p class="settings_profiles_empty">No profiles yet.</p>';
+				return;
+			}
+			profiles.forEach(function(p) {
+				var row = document.createElement("div");
+				row.className = "settings_profile_row";
+				row.innerHTML =
+					'<div class="settings_profile_meta"><strong></strong><span></span></div>' +
+					'<div class="settings_profile_buttons">' +
+					'<button type="button" class="apply">Apply</button>' +
+					'<button type="button" class="rename">Rename</button>' +
+					'<button type="button" class="delete">Delete</button>' +
+					'</div>';
+				row.querySelector("strong").textContent = p.name || "Unnamed";
+				row.querySelector("span").textContent = new Date(p.updatedAt || p.createdAt || Date.now()).toLocaleString();
+				row.querySelector(".apply").addEventListener("click", function() {
+					window.location.href = "/settings/restore/?" + (p.encoded || "");
+				});
+				row.querySelector(".rename").addEventListener("click", function() {
+					var next = window.prompt("Rename profile", p.name || "");
+					if (!next) return;
+					p.name = next.trim();
+					p.updatedAt = Date.now();
+					saveProfiles(profiles);
+					renderProfiles();
+					refreshPaletteCommands();
+				});
+				row.querySelector(".delete").addEventListener("click", function() {
+					if (!window.confirm("Delete profile \"" + (p.name || "Unnamed") + "\"?")) return;
+					saveProfiles(profiles.filter(function(x) { return x.id !== p.id; }));
+					renderProfiles();
+					refreshPaletteCommands();
+				});
+				list.appendChild(row);
+			});
+		}
+
+		panel.querySelector("#settings_profile_save").addEventListener("click", function() {
+			var encoded = current ? (current.value || "") : "";
+			if (!encoded) {
+				window.alert("Could not read current settings blob on this page.");
+				return;
+			}
+			var input = panel.querySelector("#settings_profile_name");
+			var name = (input.value || "").trim() || "Profile " + new Date().toLocaleTimeString();
+			var profiles = loadProfiles();
+			var existing = profiles.find(function(x) { return x.name === name; });
+			if (existing) {
+				existing.encoded = encoded;
+				existing.updatedAt = Date.now();
+			} else {
+				profiles.unshift({ id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8), name: name, encoded: encoded, createdAt: Date.now(), updatedAt: Date.now() });
+			}
+			saveProfiles(profiles);
+			input.value = "";
+			renderProfiles();
+			refreshPaletteCommands();
+		});
+
+		renderProfiles();
+	}
+
+	function init() {
+		attachGlobalKeyboard();
+		attachLocalTools();
+		attachCommentPower();
+		attachMediaFallbacks();
+		attachSettingsProfiles();
+		refreshPaletteCommands();
+	}
+
+	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+	else init();
+})();

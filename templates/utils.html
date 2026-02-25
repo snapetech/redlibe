@@ -68,7 +68,7 @@
 
 {% macro render_hls_notification(redirect_url) -%}
 {% if post.post_type == "video" && !post.media.alt_url.is_empty() && prefs.hide_hls_notification != "on" %}
-<div class="post_notification"><p><a href="/settings/update/?use_hls=on&redirect={{ redirect_url }}">Enable HLS</a> to view with audio, or <a href="/settings/update/?hide_hls_notification=on&redirect={{ redirect_url }}">disable this notification</a></p></div>
+<div class="post_notification hls_hint"><p>This Reddit video may play without audio in MP4 mode. <a href="/settings/update/?use_hls=on&redirect={{ redirect_url }}">Enable HLS for audio/adaptive playback</a>, or <a href="/settings/update/?hide_hls_notification=on&redirect={{ redirect_url }}">hide this hint</a>.</p></div>
 {% endif %}
 {%- endmacro %}
 
@@ -97,7 +97,7 @@
 {% macro post(post) -%}
 {% set post_should_be_blurred = post.flags.spoiler && prefs.blur_spoiler=="on" -%}
 <!-- POST CONTENT -->
-<div class="post highlighted{% if post_should_be_blurred %} post_blurred{% endif %}">
+<div class="post highlighted{% if post_should_be_blurred %} post_blurred{% endif %}" data-post-permalink="{{ post.permalink }}" data-post-title="{{ post.title }}" data-post-community="{{ post.community }}">
 	<p class="post_header">
 		<a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a>
 		<span class="dot">&bull;</span>
@@ -155,7 +155,7 @@
 	{% if prefs.use_hls == "on" && !post.media.alt_url.is_empty() %}
 	<script src="/hls.min.js"></script>
 	<div class="post_media_content">
-		<video class="post_media_video short {% if prefs.autoplay_videos == "on" %}hls_autoplay{% endif %}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" preload="none" controls>
+		<video class="post_media_video short {% if prefs.autoplay_videos == "on" %}hls_autoplay{% endif %}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" preload="none" controls playsinline webkit-playsinline>
 			<source src="{{ post.media.alt_url }}" type="application/vnd.apple.mpegurl" />
 			<source src="{{ post.media.url }}" type="video/mp4" />
 		</video>
@@ -163,7 +163,7 @@
 	<script src="/playHLSVideo.js"></script>
 	{% else %}
 	<div class="post_media_content">
-		<video class="post_media_video" src="{{ post.media.url }}" controls {% if prefs.autoplay_videos == "on" %}autoplay{% endif %} loop><a href={{ post.media.url }}>Video</a></video>
+		<video class="post_media_video" src="{{ post.media.url }}" controls playsinline webkit-playsinline {% if prefs.autoplay_videos == "on" %}autoplay{% endif %} loop><a href={{ post.media.url }}>Video</a></video>
 	</div>
 	{% call render_hls_notification(post.permalink[1..]) %}
 	{% endif %}
@@ -263,6 +263,10 @@
 			{% endif %}
 			{% endif %}
 		</ul>
+		<div class="post_local_tools" aria-label="Local tools">
+			<button type="button" class="local_readlater_btn">Read later</button>
+			<button type="button" class="local_tag_btn">Tag</button>
+		</div>
 		<p>{{ post.upvote_ratio }}%<span id="upvoted"> Upvoted</span></p>
 	</div>
 </div>
@@ -287,7 +291,7 @@
 
 {% macro post_in_list(post) -%}
 {% set post_should_be_blurred = (post.flags.nsfw && prefs.blur_nsfw=="on") || (post.flags.spoiler && prefs.blur_spoiler=="on") -%}
-<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}" data-post-id="t3_{{ post.id }}">
+<div class="post{% if post.flags.stickied %} stickied{% endif %}{% if post_should_be_blurred %} post_blurred{% endif %}" id="{{ post.id }}" data-post-id="t3_{{ post.id }}" data-post-permalink="{{ post.permalink }}" data-post-title="{{ post.title }}" data-post-community="{{ post.community }}">
 	<p class="post_header">
 		{% let community -%}
 		{% if post.community.starts_with("u_") -%}
@@ -340,14 +344,14 @@
 	{% else if (prefs.layout.is_empty() || prefs.layout == "card") && (post.post_type == "gif" || post.post_type == "video") %}
 	{% if prefs.use_hls == "on" && !post.media.alt_url.is_empty() %}
 	<div class="post_media_content">
-        <video class="post_media_video short{% if prefs.autoplay_videos == "on" %} hls_autoplay{% endif %}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" controls preload="none">
+        <video class="post_media_video short{% if prefs.autoplay_videos == "on" %} hls_autoplay{% endif %}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" controls preload="none" playsinline webkit-playsinline>
 			<source src="{{ post.media.alt_url }}" type="application/vnd.apple.mpegurl" />
 			<source src="{{ post.media.url }}" type="video/mp4" />
 		</video>
 	</div>
 	{% else %}
 	<div class="post_media_content">
-		<video class="post_media_video short" src="{{ post.media.url }}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" preload="none" controls {% if prefs.autoplay_videos == "on" %}autoplay{% endif %}><a href={{ post.media.url }}>Video</a></video>
+		<video class="post_media_video short" src="{{ post.media.url }}" {% if post.media.width > 0 && post.media.height > 0 %}width="{{ post.media.width }}" height="{{ post.media.height }}"{% endif %} poster="{{ post.media.poster }}" preload="none" controls playsinline webkit-playsinline {% if prefs.autoplay_videos == "on" %}autoplay{% endif %}><a href={{ post.media.url }}>Video</a></video>
 	</div>
 	{% endif %}
 	{% else if post.post_type != "self" %}
@@ -385,6 +389,10 @@
 
 	<div class="post_footer">
 		<a href="{{ post.permalink }}" class="post_comments" title="{{ post.comments.1 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}">{{ post.comments.0 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}</a>
+		<div class="post_local_tools" aria-label="Local tools">
+			<button type="button" class="local_readlater_btn">Read later</button>
+			<button type="button" class="local_tag_btn">Tag</button>
+		</div>
 	</div>
 </div>
 {%- endmacro %}

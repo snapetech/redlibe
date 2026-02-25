@@ -40,6 +40,7 @@
 		{% if prefs.font_size == "small" %} font_small{% endif %}
 		{% if prefs.font_size == "large" %} font_large{% endif %}
 		{% block body_extra_class %}{% endblock %}">
+		<a class="skip-link" href="#main-content">Skip to content</a>
 		<!-- NAVIGATION BAR -->
 		<nav class="
 			{% if prefs.fixed_navbar == "on" %} fixed_navbar{% endif %}">
@@ -93,7 +94,7 @@
 		
 		<!-- MAIN CONTENT -->
 		{% block body %}
-		<main>
+		<main id="main-content" tabindex="-1">
 			{% block content %}
 			{% endblock %}
 		</main>
@@ -167,6 +168,7 @@
 			}
 		})();
 		</script>
+		<script src="/power.js"></script>
 		{% block scripts %}{% endblock %}
 	</body>
 </html>
