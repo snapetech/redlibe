@@ -149,12 +149,12 @@ input {
 }
 
 html.fixed_navbar {
-    scroll-padding-top: 50px;
+    scroll-padding-top: 76px;
 }
 
 @media screen and (max-width: 800px) {
     html.fixed_navbar {
-        scroll-padding-top: 100px;
+        scroll-padding-top: 112px;
     }
 }
 
@@ -171,7 +171,7 @@ body.card {
 
 body.fixed_navbar {
     min-height: calc(100vh - 90px);
-    padding-top: 60px;
+    padding-top: 76px;
 }
 
 nav {
@@ -222,10 +222,13 @@ nav #links {
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-grow: 1;
-    flex-basis: 0;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
     justify-content: flex-end;
     min-width: 0;
+    font-size: 14px;
+    white-space: nowrap;
 }
 
 nav #links svg {
@@ -246,6 +249,13 @@ figcaption {
     margin-left: 10px;
 }
 
+#logged_in_user {
+    font-size: inherit;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
 nav #links > a,
 #user_menu > summary {
     display: inline-flex;
@@ -255,6 +265,11 @@ nav #links > a,
     min-height: 32px;
     padding: 4px 8px;
     border-radius: 6px;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    letter-spacing: normal;
+    flex: 0 0 auto;
 }
 
 nav #links > a:hover,
@@ -1203,20 +1218,26 @@ body.reader_mode main {
 }
 
 .post {
-    border-radius: 5px;
-    background: var(--post);
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--outside) 76%, var(--accent) 10%);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--post) 92%, var(--foreground) 8%),
+        var(--post)
+    );
     box-shadow: var(--shadow);
     display: grid;
-    transition: 0.2s background;
+    transition: 0.18s background, 0.18s border-color, 0.18s transform;
+    overflow: hidden;
     grid-template:
         "post_score post_header post_thumbnail" auto
-        "post_score post_title  post_thumbnail" 1fr
+        "post_score post_title  post_thumbnail" auto
         "post_score post_media  post_thumbnail" auto
         "post_score post_body   post_thumbnail" auto
         "post_score post_poll   post_thumbnail" auto
         "post_score post_notification post_thumbnail" auto
         "post_score post_footer post_thumbnail" auto
-        / minmax(40px, auto) minmax(0, 1fr) fit-content(min(20%, 152px));
+        / minmax(48px, auto) minmax(0, 1fr) fit-content(min(22%, 168px));
 }
 
 .post:not(:last-child) {
@@ -1224,18 +1245,21 @@ body.reader_mode main {
 }
 
 .post:hover {
-    background: var(--foreground);
+    background: color-mix(in srgb, var(--foreground) 86%, var(--post) 14%);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--outside) 72%);
+    transform: translateY(-1px);
 }
 
 .post_score {
-    padding-top: 19px;
-    padding-left: 12px;
+    padding: 14px 8px 0 8px;
     font-size: 13px;
     font-weight: bold;
     color: var(--accent);
     grid-area: post_score;
     text-align: center;
-    border-radius: 5px 0 0 5px;
+    border-right: 1px solid color-mix(in srgb, var(--outside) 82%, var(--accent) 10%);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--highlighted) 70%, transparent), transparent 70%);
     transition: 0.2s background;
 }
 
@@ -1244,9 +1268,25 @@ body.reader_mode main {
 }
 
 .post_header {
-    margin: 15px 20px 5px 12px;
+    margin: 11px 16px 0 12px;
     grid-area: post_header;
-    line-height: 25px;
+    line-height: 1.2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 7px;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--text) 72%, var(--muted) 28%);
+    opacity: 0.95;
+}
+
+.post_header .dot {
+    opacity: 0.35;
+    margin: 0;
+}
+
+.post_header .award {
+    margin-right: 0;
 }
 
 .post_subreddit {
@@ -1255,15 +1295,27 @@ body.reader_mode main {
 
 .post_title {
     font-size: 16px;
-    font-weight: 500;
-    line-height: 1.5;
+    font-weight: 600;
+    line-height: 1.26;
     overflow-wrap: anywhere;
-    margin: 5px 15px 5px 12px;
+    margin: 4px 16px 4px 12px;
     grid-area: post_title;
 }
 
 .post:not(.highlighted) .post_title a:visited {
     color: var(--visited);
+}
+
+.post_media_content {
+    grid-area: post_media;
+    margin: 4px 16px 6px 12px;
+    color: var(--visited);
+    font-size: 0.9em;
+}
+
+.post_media_content > a,
+.post_media_content > video {
+    display: block;
 }
 
 .post_notification {
@@ -1346,9 +1398,14 @@ body.reader_mode main {
 .post_media_content,
 .post .__NoScript_PlaceHolder__,
 .gallery_counter {
-    margin: 0 0 0.5em 0;
+    margin: 0 0 0.35em 0;
     font-size: 0.9em;
     color: var(--visited);
+}
+
+.post > .post_media_content {
+    grid-area: post_media;
+    margin: 4px 16px 6px 12px;
 }
 
 .gallery {
@@ -1441,10 +1498,41 @@ body.reader_mode main {
 .post_body {
     opacity: 0.9;
     font-weight: normal;
-    padding: 5px 15px 5px 12px;
+    padding: 4px 16px 4px 12px;
     grid-area: post_body;
-    width: calc(100% - 30px);
+    width: auto;
     overflow-wrap: anywhere;
+}
+
+.post_body.post_preview {
+    width: auto;
+    margin: 4px 16px 10px 12px;
+    padding: 10px 12px 10px 14px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--outside) 78%, var(--accent) 14%);
+    border-left: 0;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--foreground) 82%, var(--background) 18%), color-mix(in srgb, var(--post) 88%, var(--background) 12%));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    opacity: 0.93;
+    font-size: 0.91rem;
+    line-height: 1.42;
+    position: relative;
+}
+
+.post_body.post_preview::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 58%, var(--outside) 42%);
+}
+
+.post_body.post_preview > * + * {
+    margin-top: 0.5rem;
 }
 
 .post_body pre {
@@ -1507,18 +1595,21 @@ body.reader_mode main {
 .post_preview {
     -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent);
     mask-image: linear-gradient(180deg, #000 60%, transparent);
-    opacity: 0.8;
-    max-height: 250px;
+    opacity: 1;
+    max-height: 220px;
     overflow: hidden;
 }
 
 .post_footer {
     display: flex;
     justify-content: space-between;
-    opacity: 0.5;
+    align-items: center;
+    opacity: 0.72;
     font-size: 14px;
     grid-area: post_footer;
-    margin: 5px 20px 15px 12px;
+    margin: 2px 16px 12px 12px;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--outside) 84%, var(--accent) 8%);
 }
 
 .post_comments {
@@ -1559,26 +1650,37 @@ body.reader_mode main {
 }
 
 .post_thumbnail {
-    border-radius: 5px;
+    border-radius: 10px;
     border: var(--panel-border);
     display: grid;
+    place-items: center;
     overflow: hidden;
-    background-color: var(--background);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--background) 92%, var(--foreground) 8%), var(--background));
     grid-area: post_thumbnail;
-    margin: 5px;
+    margin: 8px 8px 8px 0;
+    align-self: stretch;
+    min-height: 88px;
 }
 
 .post_thumbnail div {
     grid-area: 1 / 1 / 2 / 2;
-    object-fit: cover;
-    align-self: center;
-    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     overflow: hidden;
 }
 
 .post_thumbnail div svg {
-    width: 100%;
+    display: block;
+    width: auto;
     height: auto;
+    max-width: 100%;
+    max-height: 100%;
 }
 
 .post_thumbnail span {
@@ -1610,6 +1712,14 @@ body.reader_mode main {
 
 .post_thumbnail img {
     max-width: 100%;
+    max-height: 100%;
+    display: block;
+    margin: auto;
+    object-fit: contain;
+}
+
+.post_thumbnail > span {
+    width: 100%;
 }
 
 .stickied {
@@ -2041,9 +2151,19 @@ summary.comment_data {
     background: color-mix(in srgb, var(--highlighted) 85%, transparent);
 }
 
+.theme_tile:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 70%, white 10%);
+    outline-offset: 2px;
+}
+
 .theme_tile.selected {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+    background: color-mix(in srgb, var(--highlighted) 80%, var(--post) 20%);
+}
+
+.theme_tile.selected .theme_preview_card {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px color-mix(in srgb, var(--accent) 36%, transparent);
 }
 
 .theme_preview_card {
@@ -2412,7 +2532,7 @@ th {
     
     body.fixed_navbar {
         min-height: calc(100vh - 75px);
-        padding-top: 45px;
+        padding-top: 96px;
         #subreddit { margin: 49px 0 0; }
         #user { margin: 49px 0 20px 0; }
         #settings { margin-top: 48px; }
@@ -2497,7 +2617,7 @@ th {
     .post {
         grid-template:
             "post_header post_header post_thumbnail" auto
-            "post_title  post_title  post_thumbnail" 1fr
+            "post_title  post_title  post_thumbnail" auto
             "post_media  post_media  post_thumbnail" auto
             "post_body   post_body   post_thumbnail" auto
             "post_poll   post_poll   post_thumbnail" auto
