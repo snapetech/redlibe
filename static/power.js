@@ -725,6 +725,23 @@
 		});
 	}
 
+	/* ── Reader Nav Badge ─────────────────────────────────────── */
+	function attachReaderBadge() {
+		var link = document.getElementById("reader_link");
+		if (!link) return;
+		fetch("/api/reader/unread_count", { credentials: "same-origin" })
+			.then(function(r) { return r.json(); })
+			.then(function(data) {
+				var count = data && data.count ? data.count : 0;
+				if (count <= 0) return;
+				var badge = document.createElement("span");
+				badge.className = "reader_nav_badge";
+				badge.textContent = count > 99 ? "99+" : String(count);
+				link.appendChild(badge);
+			})
+			.catch(function() {});
+	}
+
 	function init() {
 		attachGlobalKeyboard();
 		attachLocalTools();
@@ -739,6 +756,7 @@
 		attachFeedFilter();
 		attachFeedKeyNav();
 		attachScrollToRead();
+		attachReaderBadge();
 	}
 
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

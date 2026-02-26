@@ -146,6 +146,22 @@ pub async fn action_mark_all_read(mut req: Request<Body>) -> Result<Response<Bod
 	Ok(redirect_back(&req))
 }
 
+/// GET /api/reader/unread_count — returns JSON {"count": N}
+pub async fn api_unread_count(req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut fake_res = Response::new(Body::empty());
+	let count = if local_state_enabled() {
+		if let Some(user_key) = ensure_sid(&req, &mut fake_res) {
+			if let State::Sqlite(store) = &*STATE {
+				store.count_unread(&user_key).await.unwrap_or(0)
+			} else { 0 }
+		} else { 0 }
+	} else { 0 };
+	let json = format!("{{\"count\":{count}}}");
+	let mut res = Response::new(Body::from(json));
+	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("application/json"));
+	Ok(res)
+}
+
 /// GET /action/open?post_id=X&url=/r/sub/comments/...
 /// Marks the post read then redirects to the post URL.
 /// URL must be a relative path (starts with /) to prevent open redirect.

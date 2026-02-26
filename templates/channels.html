@@ -15,6 +15,18 @@
   <ul class="channel_list">
     {% for ch in &channels %}
     <li class="channel_item">
+      <span class="channel_reorder">
+        <form action="/channels/{{ ch.slug }}/move" method="POST" class="channel_move_form">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="direction" value="up">
+          <button type="submit" class="channel_move_btn" title="Move up">▲</button>
+        </form>
+        <form action="/channels/{{ ch.slug }}/move" method="POST" class="channel_move_form">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="direction" value="down">
+          <button type="submit" class="channel_move_btn" title="Move down">▼</button>
+        </form>
+      </span>
       <a href="/reader/{{ ch.slug }}" class="channel_name">{{ ch.title }}</a>
       <span class="channel_actions">
         <a href="/channels/{{ ch.slug }}" class="channel_edit_btn">Edit</a>
@@ -26,6 +38,13 @@
     </li>
     {% endfor %}
   </ul>
+
+  {% if csrf != "" %}
+  <form action="/action/mark_all_read" method="POST" style="margin-bottom: 1.5rem;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="reader_mark_all_btn">Mark all read</button>
+  </form>
+  {% endif %}
   {% else %}
   <p class="channels_empty">No channels yet. Create one below.</p>
   {% endif %}

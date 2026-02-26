@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redlibe-sqlite-backup
+  namespace: redlibe
+spec:
+  schedule: "0 3 * * *"   # 3:00 AM daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          nodeSelector:
+            kubernetes.io/hostname: kspld0
+          containers:
+            - name: sqlite-backup
+              image: alpine:3.20
+              command:
+                - sh
+                - -c
+                - |
+                  apk add --no-cache sqlite >/dev/null 2>&1
+                  DB=/data/redlib.sqlite
+                  BACKUP=/data/backups/redlib-$(date +%Y%m%d-%H%M%S).sqlite
+                  mkdir -p /data/backups
+                  sqlite3 "$DB" ".backup '$BACKUP'"
+                  echo "Backup created: $BACKUP"
+                  # Keep only the 7 most recent backups
+                  ls -t /data/backups/redlib-*.sqlite | tail -n +8 | xargs -r rm -f
+                  echo "Backup complete. Remaining backups:"
+                  ls -lh /data/backups/
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          volumes:
+            - name: data
+              hostPath:
+                path: /var/lib/redlibe
+                type: DirectoryOrCreate

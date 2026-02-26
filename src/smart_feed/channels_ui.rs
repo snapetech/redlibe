@@ -267,6 +267,31 @@ pub async fn channels_update(mut req: Request<Body>) -> Result<Response<Body>, S
 	Ok(redirect(&format!("/reader/{slug}")))
 }
 
+/// POST /channels/:slug/move — move channel up or down in sort order
+pub async fn channels_move(mut req: Request<Body>) -> Result<Response<Body>, String> {
+	if !local_state_enabled() {
+		return info(req, "Enable local state (REDLIB_ENABLE_LOCAL_STATE=on) to use channels.").await;
+	}
+	let slug = req.param("slug").unwrap_or_default();
+	let mut res = hyper::Response::new(Body::empty());
+	let user_key = match require_user_key(&req, &mut res).await {
+		Ok(k) => k,
+		Err(msg) => return info(req, &msg).await,
+	};
+
+	let form = read_form(&mut req).await?;
+	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
+	let direction: i64 = match form.get("direction").map(|s| s.as_str()) {
+		Some("up") => -1,
+		_ => 1,
+	};
+
+	if let State::Sqlite(store) = &*STATE {
+		store.move_channel(&user_key, &slug, direction).await?;
+	}
+	Ok(redirect("/channels"))
+}
+
 /// POST /channels/:slug/delete — delete a channel
 pub async fn channels_delete(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	if !local_state_enabled() {

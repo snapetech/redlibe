@@ -20,6 +20,7 @@ pub struct ChannelRow {
 	pub rule_json: String,
 	pub created_at: i64,
 	pub updated_at: i64,
+	pub sort_order: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +234,22 @@ impl SqliteStore {
 		.map_err(|e| e.to_string())?
 	}
 
+	pub async fn count_unread(&self, user_key: &str) -> Result<i64, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			conn.query_row(
+				"SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 0",
+				params![user_key],
+				|r| r.get::<_, i64>(0),
+			)
+			.map_err(|e| e.to_string())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
 	pub async fn mark_all_read(&self, user_key: &str) -> Result<usize, String> {
 		let pool = self.pool.clone();
 		let user_key = user_key.to_string();
@@ -417,7 +434,7 @@ impl SqliteStore {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			let mut stmt = conn
 				.prepare(
-					"SELECT slug, title, rule_json, created_at, updated_at FROM channel WHERE user_key = ?1 ORDER BY title ASC",
+					"SELECT slug, title, rule_json, created_at, updated_at, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC",
 				)
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
@@ -428,6 +445,7 @@ impl SqliteStore {
 						rule_json: row.get(2)?,
 						created_at: row.get(3)?,
 						updated_at: row.get(4)?,
+						sort_order: row.get(5)?,
 					})
 				})
 				.map_err(|e| e.to_string())?;
@@ -449,7 +467,7 @@ impl SqliteStore {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			conn
 				.query_row(
-					"SELECT slug, title, rule_json, created_at, updated_at FROM channel WHERE user_key = ?1 AND slug = ?2",
+					"SELECT slug, title, rule_json, created_at, updated_at, sort_order FROM channel WHERE user_key = ?1 AND slug = ?2",
 					params![user_key, slug],
 					|row| {
 						Ok(ChannelRow {
@@ -458,6 +476,7 @@ impl SqliteStore {
 							rule_json: row.get(2)?,
 							created_at: row.get(3)?,
 							updated_at: row.get(4)?,
+							sort_order: row.get(5)?,
 						})
 					},
 				)
@@ -492,6 +511,51 @@ impl SqliteStore {
 			.map_err(|e| e.to_string())?;
 			tx.commit().map_err(|e| e.to_string())?;
 			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	/// Move channel up (-1) or down (+1) in sort_order by swapping with adjacent channel.
+	pub async fn move_channel(&self, user_key: &str, slug: &str, direction: i64) -> Result<(), String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		let slug = slug.to_string();
+		spawn_blocking(move || {
+			let mut conn = pool.get().map_err(|e| e.to_string())?;
+			let tx = conn.transaction().map_err(|e| e.to_string())?;
+			// Get all channels in order
+			let mut channels: Vec<(String, i64)> = {
+				let mut stmt = tx.prepare(
+					"SELECT slug, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC"
+				).map_err(|e| e.to_string())?;
+				let rows = stmt.query_map(params![user_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+					.map_err(|e| e.to_string())?;
+				let mut out = Vec::new();
+				for r in rows { out.push(r.map_err(|e| e.to_string())?); }
+				out
+			};
+			// Find current index
+			let idx = match channels.iter().position(|(s, _)| s == &slug) {
+				Some(i) => i,
+				None => return tx.commit().map_err(|e| e.to_string()),
+			};
+			let target = if direction < 0 {
+				if idx == 0 { return tx.commit().map_err(|e| e.to_string()); }
+				idx - 1
+			} else {
+				if idx + 1 >= channels.len() { return tx.commit().map_err(|e| e.to_string()); }
+				idx + 1
+			};
+			channels.swap(idx, target);
+			// Re-assign sort_order 0, 1, 2, ...
+			for (i, (s, _)) in channels.iter().enumerate() {
+				tx.execute(
+					"UPDATE channel SET sort_order = ?1 WHERE user_key = ?2 AND slug = ?3",
+					params![i as i64, user_key, s],
+				).map_err(|e| e.to_string())?;
+			}
+			tx.commit().map_err(|e| e.to_string())
 		})
 		.await
 		.map_err(|e| e.to_string())?
@@ -580,7 +644,7 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 		.query_row("PRAGMA user_version", [], |row| row.get(0))
 		.map_err(|e| e.to_string())?;
 
-	if user_version >= 3 {
+	if user_version >= 4 {
 		return Ok(());
 	}
 
@@ -674,6 +738,19 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
         "#,
 		)
 		.map_err(|e| e.to_string())?;
+
+	// V4: sort_order column for channel reordering
+	if user_version < 4 {
+		conn.execute_batch(
+			r#"
+			BEGIN;
+			ALTER TABLE channel ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+			PRAGMA user_version = 4;
+			COMMIT;
+			"#,
+		)
+		.map_err(|e| e.to_string())?;
+	}
 
 	Ok(())
 }

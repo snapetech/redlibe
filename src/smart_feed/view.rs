@@ -48,6 +48,8 @@ struct FeedTemplate {
 	new_count: usize,
 	filter: String,
 	total_count: usize,
+	unread_count: usize,
+	saved_count: usize,
 	after: String,
 }
 
@@ -269,6 +271,8 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	// Apply filter
 	let filter = q.filter.as_deref().unwrap_or("all");
 	let total_count = scored.len();
+	let unread_count = scored.iter().filter(|(fi, _)| !fi.is_read).count();
+	let saved_count = scored.iter().filter(|(fi, _)| fi.is_saved).count();
 	let scored: Vec<(FeedItem, f64)> = match filter {
 		"unread" => scored.into_iter().filter(|(fi, _)| !fi.is_read).collect(),
 		"saved" => scored.into_iter().filter(|(fi, _)| fi.is_saved).collect(),
@@ -300,6 +304,8 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		new_count,
 		filter: filter.to_string(),
 		total_count,
+		unread_count,
+		saved_count,
 		after: after_cursor,
 	};
 

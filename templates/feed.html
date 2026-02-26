@@ -33,9 +33,9 @@
   <a href="?lens={{ lens }}&preset={{ preset }}&filter=all"
      class="reader_filter_btn{% if filter == "all" || filter == "" %} active{% endif %}">All ({{ total_count }})</a>
   <a href="?lens={{ lens }}&preset={{ preset }}&filter=unread"
-     class="reader_filter_btn{% if filter == "unread" %} active{% endif %}">Unread</a>
+     class="reader_filter_btn{% if filter == "unread" %} active{% endif %}">Unread{% if unread_count > 0 %} ({{ unread_count }}){% endif %}</a>
   <a href="?lens={{ lens }}&preset={{ preset }}&filter=saved"
-     class="reader_filter_btn{% if filter == "saved" %} active{% endif %}">Saved</a>
+     class="reader_filter_btn{% if filter == "saved" %} active{% endif %}">Saved{% if saved_count > 0 %} ({{ saved_count }}){% endif %}</a>
   {% if csrf != "" %}
   <form action="/action/mark_all_read" method="POST" style="display:inline; margin-left:auto;">
     <input type="hidden" name="csrf" value="{{ csrf }}">

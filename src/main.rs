@@ -473,11 +473,13 @@ async fn main() {
 	app.at("/channels").get(|r| smart_feed::channels_list(r).boxed()).post(|r| smart_feed::channels_create(r).boxed());
 	app.at("/channels/:slug").get(|r| smart_feed::channels_edit(r).boxed()).post(|r| smart_feed::channels_update(r).boxed());
 	app.at("/channels/:slug/delete").post(|r| smart_feed::channels_delete(r).boxed());
+	app.at("/channels/:slug/move").post(|r| smart_feed::channels_move(r).boxed());
 	app.at("/cluster/:id").get(|r| smart_feed::cluster_view(r).boxed());
 	app.at("/mutes").get(|r| smart_feed::mutes_list(r).boxed());
 	app.at("/mutes/export.json").get(|r| smart_feed::action_export_mutes(r).boxed());
 	app.at("/mutes/import").post(|r| smart_feed::action_import_mutes(r).boxed());
 	app.at("/stats").get(|r| smart_feed::stats_view(r).boxed());
+	app.at("/api/reader/unread_count").get(|r| smart_feed::api_unread_count(r).boxed());
 
 	// REST API
 	app.at("/api/v1/r/:sub").get(|r| api::subreddit_listing(r).boxed());

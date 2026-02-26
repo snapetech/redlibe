@@ -4710,4 +4710,38 @@ main > * > footer > a:active {
 .stats_community_count { opacity: 0.55; font-size: 0.82rem; }
 .stats_back { font-size: 0.85rem; opacity: 0.7; }
 
+/* Reader nav link + unread badge */
+#reader_link { position: relative; }
+#reader_link span { font-size: 0.9rem; }
+.reader_nav_badge {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 8px;
+    min-width: 14px;
+    text-align: center;
+    pointer-events: none;
+}
+
+/* Channel reorder buttons */
+.channel_reorder { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; }
+.channel_move_form { display: block; }
+.channel_move_btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    opacity: 0.3;
+    cursor: pointer;
+    font-size: 0.6rem;
+    padding: 0 3px;
+    line-height: 1;
+}
+.channel_move_btn:hover { opacity: 1; }
+
 /* ── end smart feed ───────────────────────────────────────── */
