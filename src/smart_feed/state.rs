@@ -1,8 +1,6 @@
 use super::csrf;
-use crate::config::get_setting;
-use crate::server::{RequestExt, ResponseExt};
-use crate::utils::{error, info};
-use cookie::Cookie;
+use super::session::require_user_key;
+use crate::utils::error;
 use hyper::{Body, Request, Response};
 
 use crate::state::{State, STATE};
@@ -14,32 +12,6 @@ fn redirect_back(req: &Request<Body>) -> Response<Body> {
 		.and_then(|v| v.to_str().ok())
 		.unwrap_or("/reader/my-subs?lens=reader&preset=digest15");
 	crate::utils::redirect(back)
-}
-
-fn local_state_enabled() -> bool {
-	matches!(get_setting("REDLIB_ENABLE_LOCAL_STATE"), Some(v) if v == "on")
-}
-
-fn ensure_sid(req: &Request<Body>, res: &mut Response<Body>) -> Option<String> {
-	if !local_state_enabled() {
-		return None;
-	}
-	if let Some(c) = req.cookie("rl_sid") {
-		return Some(c.value().to_string());
-	}
-	let sid = uuid::Uuid::new_v4().to_string();
-	let cookie = Cookie::build(("rl_sid", sid.clone()))
-		.path("/")
-		.http_only(true)
-		.same_site(cookie::SameSite::Lax)
-		.max_age(cookie::time::Duration::days(365))
-		.finish();
-	res.insert_cookie(cookie);
-	Some(sid)
-}
-
-async fn require_user_key(req: &Request<Body>, res: &mut Response<Body>) -> Result<String, String> {
-	ensure_sid(req, res).ok_or_else(|| "Local state disabled".to_string())
 }
 
 async fn read_form(req: &mut Request<Body>) -> Result<std::collections::HashMap<String, String>, String> {

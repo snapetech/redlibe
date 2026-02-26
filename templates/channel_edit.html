@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Edit {{ title }}{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="channel_edit_page">
+  <div class="channel_edit_header">
+    <a href="/channels">← Channels</a>
+    <span class="channel_edit_sep">·</span>
+    <a href="/reader/{{ slug }}">View feed →</a>
+  </div>
+
+  <h2>Edit: {{ title }}</h2>
+
+  {% if error != "" %}
+  <p class="form_error">{{ error }}</p>
+  {% endif %}
+
+  <form action="/channels/{{ slug }}" method="POST" class="channel_form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+
+    <div class="form_row">
+      <label class="form_label">Name
+        <input type="text" name="title" class="form_input" value="{{ title }}" maxlength="100" required>
+      </label>
+    </div>
+
+    <fieldset class="form_fieldset">
+      <legend>Sources</legend>
+      <div class="form_row">
+        <label class="form_check">
+          <input type="checkbox" name="sources_subscriptions" value="on"{% if rule.sources.subscriptions %} checked{% endif %}>
+          Include my subscriptions
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Extra subreddits <span class="form_hint">(one per line)</span>
+          <textarea name="sources_subreddits" class="form_textarea" rows="4">{{ rule.sources.subreddits.join("\n") }}</textarea>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="form_fieldset">
+      <legend>Gates</legend>
+      <div class="form_row form_row_inline">
+        <label class="form_label">Min comments
+          <input type="number" name="gate_min_comments" class="form_input_sm" value="{{ rule.gates.min_comments }}" min="0">
+        </label>
+        <label class="form_label">Min score
+          <input type="number" name="gate_min_score" class="form_input_sm" value="{{ rule.gates.min_score }}">
+        </label>
+        <label class="form_label">Max age (hours)
+          <input type="number" name="gate_max_age_hours" class="form_input_sm" value="{{ rule.gates.max_age_hours }}" min="0">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="form_fieldset">
+      <legend>Presentation</legend>
+      <div class="form_row form_row_inline">
+        <label class="form_label">Clusters
+          <select name="presentation_clusters" class="form_select">
+            <option value="on"{% if rule.presentation.clusters == "on" %} selected{% endif %}>On</option>
+            <option value="off"{% if rule.presentation.clusters == "off" %} selected{% endif %}>Off</option>
+          </select>
+        </label>
+        <label class="form_label">Density
+          <select name="presentation_density" class="form_select">
+            <option value="balanced"{% if rule.presentation.density == "balanced" %} selected{% endif %}>Balanced</option>
+            <option value="comfort"{% if rule.presentation.density == "comfort" %} selected{% endif %}>Comfortable</option>
+            <option value="dense"{% if rule.presentation.density == "dense" %} selected{% endif %}>Dense</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="form_actions">
+      <button type="submit" class="form_submit">Save Changes</button>
+      <form action="/channels/{{ slug }}/delete" method="POST" class="channel_delete_inline" onsubmit="return confirm('Delete this channel?')">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="channel_delete_btn">Delete Channel</button>
+      </form>
+    </div>
+  </form>
+</div>
+{% endblock %}

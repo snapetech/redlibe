@@ -18,13 +18,13 @@ This document maps the **feature surface of full Reddit clients** (e.g. Sync, Hy
 |------------|------------|--------|-----------------|----------|-------|
 | Login / authenticated sessions | ✅ | ❌ | **Done** (OAuth + SSH import) | Must-have | OAuth 2.0 + SSH session import from Firefox/LibreWolf. |
 | Multiple accounts + switching | ✅ (Hydra explicit) | ❌ | **Gap** | Nice-to-have | Single session per browser; would need multi-session + UI switcher. |
-| Real subscriptions from Reddit | ✅ | ❌ (cookie list only) | **Done** | Must-have | Subscribe/unsubscribe API; subscriptions stored in cookies. |
-| Account-backed state: saved, upvoted, hidden | ✅ | ❌ | **Done** | Must-have | Save/unsave, upvoted, hidden listing pages at /user/me/saved, /user/me/upvoted, /user/me/hidden. |
+| Real subscriptions from Reddit | ✅ | ❌ (cookie list only) | **Partial** | Must-have | Subscribe/unsubscribe API exists; “front page” can use instance cookie list. Pulling Reddit’s own sub list into nav/settings would align with “real” account. |
+| Account-backed state: saved, upvoted, hidden | ✅ | ❌ | **Partial** | Must-have | Save/unsave **Done**. Upvoted/hidden **Gap** (no dedicated “saved” / “upvoted” / “hidden” listing pages yet). |
 
 **Backlog (1)**
 
-- [x] **Pull Reddit subscriptions into Feeds/nav** — Subscribe/unsubscribe API works; subscriptions stored in cookies. (Done)
-- [x] **Saved / Upvoted / Hidden listing pages** — Implemented at /user/me/saved, /user/me/upvoted, /user/me/hidden. (Done)
+- [ ] **Pull Reddit subscriptions into Feeds/nav** — Use Reddit API (e.g. `/subreddits/mine`) to show account subs alongside or instead of cookie-only list. (Must-have)
+- [ ] **Saved / Upvoted / Hidden listing pages** — Dedicated routes and UI for `/user/me/saved`, upvoted, hidden (history scope). (Must-have)
 - [ ] **Multiple accounts** — Store multiple sessions, account switcher in nav/settings. (Nice-to-have)
 
 ---
@@ -35,14 +35,14 @@ This document maps the **feature surface of full Reddit clients** (e.g. Sync, Hy
 |------------|------------|--------|-----------------|----------|-------|
 | Upvote / downvote | ✅ | ❌ | **Done** | Must-have | POST /vote, UI on posts/comments. |
 | Comment / reply | ✅ | ❌ | **Done** | Must-have | POST /comment, “Reply” and “Add a comment” in UI. |
-| Create posts (text/link/media) | ✅ | ❌ | **Done** | Must-have | Text and link posts via /r/:sub/submit. |
-| Edit/delete your content | ✅ | ❌ | **Done** | Must-have | Edit and delete via /edit endpoint. |
+| Create posts (text/link/media) | ✅ | ❌ | **Planned** | Must-have | README “Planned”: post submission. |
+| Edit/delete your content | ✅ | ❌ | **Gap** | Must-have | Edit comment/post, delete comment/post via Reddit API. |
 
 **Backlog (2)**
 
-- [x] **Post submission** — Text and link posts; submit to subreddit via /r/:sub/submit. (Done)
-- [x] **Edit comment/post** — Edit via /edit endpoint with POST /api/editusertext. (Done)
-- [x] **Delete comment/post** — Delete via /edit endpoint with POST /api/del. (Done)
+- [ ] **Post submission** — Text, link, image posts; submit to subreddit (submit scope). (Must-have)
+- [ ] **Edit comment/post** — Reddit API for edit; UI to edit own comments/posts. (Must-have)
+- [ ] **Delete comment/post** — Reddit API for delete; UI for own content. (Must-have)
 
 ---
 
@@ -50,16 +50,16 @@ This document maps the **feature surface of full Reddit clients** (e.g. Sync, Hy
 
 | Capability | Sync/Hydra | Redlib | redlib-extended | Priority | Notes |
 |------------|------------|--------|-----------------|----------|-------|
-| Inbox (messages + notifications) | ✅ | ❌ | **Done** | Must-have | Inbox UI at /inbox with inbox/unread/sent tabs. |
-| Private messages | ✅ | ❌ | **Done** | Must-have | Compose and send PMs via /inbox/compose. |
+| Inbox (messages + notifications) | ✅ | ❌ | **Gap** | Must-have | No inbox/PM/notification UI. |
+| Private messages | ✅ | ❌ | **Gap** | Must-have | Requires `privatemessages` scope + inbox/compose UI. |
 | Mark read / “mark all read” | ✅ (Hydra) | ❌ | **Gap** | Nice-to-have | After inbox exists. |
 | Push notifications | ✅ | ❌ | **Gap** | Nice-to-have | Server would need to poll or use Reddit push; out of scope for “web front-end” unless we add a small notifier. |
 
 **Backlog (3)**
 
-- [x] **Inbox page** — List messages + comment replies at /inbox (inbox/unread/sent tabs). (Done)
-- [x] **Private messages** — Read, reply, compose at /inbox/compose. (Done)
-- [x] **Mark (all) read** — Mark individual or all as read via /inbox/read and /inbox/read-all. (Done)
+- [ ] **Inbox page** — List messages + comment replies (API: `/message/inbox`, etc.). (Must-have)
+- [ ] **Private messages** — Read, reply, compose (API + `privatemessages` scope). (Must-have)
+- [ ] **Mark (all) read** — After inbox exists. (Nice-to-have)
 
 ---
 
@@ -128,9 +128,9 @@ This document maps the **feature surface of full Reddit clients** (e.g. Sync, Hy
 
 | Area | Done / Partial | Planned / Gap |
 |------|-----------------|----------------|
-| **Account** | Login (OAuth + SSH), save/unsave, subscribe API, saved/upvoted/hidden pages | Multi-account |
-| **Write** | Vote, comment/reply, post create, edit, delete | - |
-| **Inbox** | Inbox, PM, mark read | - |
+| **Account** | Login (OAuth + SSH), save/unsave, subscribe API | Multi-account, Reddit subs in nav, saved/upvoted/hidden pages |
+| **Write** | Vote, comment/reply | Post create, edit, delete |
+| **Inbox** | — | Inbox, PM, mark read |
 | **Feeds** | Custom feeds (internal), multireddits, filters (cookie) | Hide read, keyword filters, content-type filters |
 | **Search** | Inherited search | UX parity, recent searches |
 | **Media** | Inherited playback | Download, share |
@@ -138,13 +138,13 @@ This document maps the **feature surface of full Reddit clients** (e.g. Sync, Hy
 
 **Suggested implementation order (must-have first)**
 
-1. ~~**Saved / upvoted / hidden listing pages**~~ (Done)
-2. ~~**Pull Reddit subscriptions into Feeds**~~ (Done)
-3. ~~**Post submission**~~ (text/link) (Done)
-4. ~~**Edit/delete own content**~~ (comment + post). (Done)
-5. ~~**Inbox + private messages**~~ (Done)
+1. **Saved / upvoted / hidden listing pages** (account-backed state).
+2. **Pull Reddit subscriptions into Feeds** (real account subs).
+3. **Post submission** (text/link/image).
+4. **Edit/delete own content** (comment + post).
+5. **Inbox + private messages** (messages scope + UI).
 
-Then: hide read, keyword filters, ~~inbox "mark all read"~~, multi-account, media download/share, search UX, custom theme editor.
+Then: hide read, keyword filters, inbox “mark all read”, multi-account, media download/share, search UX, custom theme editor.
 
 ---
 

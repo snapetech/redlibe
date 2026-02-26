@@ -465,6 +465,12 @@ async fn main() {
 	app.at("/action/mute_domain").post(|r| smart_feed::action_mute_domain(r).boxed());
 	app.at("/action/mute_subreddit").post(|r| smart_feed::action_mute_subreddit(r).boxed());
 
+	// Channel management + cluster view
+	app.at("/channels").get(|r| smart_feed::channels_list(r).boxed()).post(|r| smart_feed::channels_create(r).boxed());
+	app.at("/channels/:slug").get(|r| smart_feed::channels_edit(r).boxed()).post(|r| smart_feed::channels_update(r).boxed());
+	app.at("/channels/:slug/delete").post(|r| smart_feed::channels_delete(r).boxed());
+	app.at("/cluster/:id").get(|r| smart_feed::cluster_view(r).boxed());
+
 	// REST API
 	app.at("/api/v1/r/:sub").get(|r| api::subreddit_listing(r).boxed());
 	app.at("/api/v1/r/:sub/comments/:id").get(|r| api::post_comments(r).boxed());

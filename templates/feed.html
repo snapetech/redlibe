@@ -15,8 +15,23 @@
     <a href="/reader/{{ channel_slug }}?lens=reader&preset=digest15"{% if lens == "reader" %} class="active"{% endif %}>Reader</a>
     <a href="/reader/{{ channel_slug }}?lens=research&preset=deepdives"{% if lens == "research" %} class="active"{% endif %}>Research</a>
     <a href="/reader/{{ channel_slug }}?lens=discussion&preset=live"{% if lens == "discussion" %} class="active"{% endif %}>Discussion</a>
+    <span class="reader_lens_sep">·</span>
+    <a href="/channels" class="reader_channels_link">Channels</a>
   </div>
 </div>
+
+{% if csrf != "" %}
+<details class="save_channel_drawer">
+  <summary>+ Save as Channel</summary>
+  <form action="/channels" method="POST" class="save_channel_form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="sources_subscriptions" value="on">
+    <label>Name <input type="text" name="title" class="form_input" placeholder="My Feed" maxlength="100" required></label>
+    <button type="submit" class="form_submit">Save</button>
+    <span class="form_hint">Creates a channel using your subscriptions. Edit gates and sources at <a href="/channels">Channels</a>.</span>
+  </form>
+</details>
+{% endif %}
 
 <div id="feed_items">
 {% for item in items %}
@@ -32,7 +47,7 @@
       <span class="feed_time">{{ item.post.rel_time }}</span>
       <span class="feed_comments">{{ item.post.comments.0 }} comments</span>
       {% if item.cluster_size > 1 %}
-        <span class="feed_cluster">+{{ item.cluster_size - 1 }} similar</span>
+        <a href="/cluster/{{ item.cluster_id.as_ref().unwrap() }}?channel={{ channel_slug }}&lens={{ lens }}&preset={{ preset }}" class="feed_cluster">+{{ item.cluster_size - 1 }} similar</a>
       {% endif %}
     </div>
 
@@ -69,6 +84,13 @@
         <input type="hidden" name="pattern" value="{{ item.post.community }}">
         <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute r/{{ item.post.community }}">Mute sub</button>
       </form>
+      {% if item.post.domain != "" && !item.post.domain.starts_with("self.") %}
+      <form action="/action/mute_domain" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="pattern" value="{{ item.post.domain }}">
+        <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute {{ item.post.domain }}">Mute domain</button>
+      </form>
+      {% endif %}
     </div>
     {% endif %}
   </div>

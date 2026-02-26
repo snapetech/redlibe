@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Similar posts{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="cluster_page">
+  <div class="cluster_nav">
+    <a href="/reader/{{ channel_slug }}?lens={{ lens }}&preset={{ preset }}">← Back to feed</a>
+  </div>
+
+  <h2>Similar posts <span class="cluster_count">({{ posts.len() }})</span></h2>
+
+  {% if posts.is_empty() %}
+  <p>Cluster not found or feed has changed. <a href="/reader/{{ channel_slug }}?lens={{ lens }}&preset={{ preset }}">Return to feed</a>.</p>
+  {% else %}
+  <div id="feed_items">
+    {% for post in &posts %}
+    <div class="feed_item">
+      <div class="feed_item_title">
+        <a href="{{ post.permalink }}">{{ post.title }}</a>
+      </div>
+      <div class="feed_item_meta">
+        <span class="feed_sub">r/{{ post.community }}</span>
+        {% if post.domain != "" && !post.domain.starts_with("self.") %}
+          <span class="feed_domain">{{ post.domain }}</span>
+        {% endif %}
+        <span class="feed_time">{{ post.rel_time }}</span>
+        <span class="feed_comments">{{ post.comments.0 }} comments</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

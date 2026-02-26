@@ -4,7 +4,7 @@ mod sqlite;
 
 use std::sync::LazyLock;
 
-pub use sqlite::{MuteRule, SqliteStore};
+pub use sqlite::{ChannelRow, MuteRule, SqliteStore};
 
 pub enum State {
 	Disabled,

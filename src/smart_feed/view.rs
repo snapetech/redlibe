@@ -3,16 +3,15 @@
 use super::channel::ChannelRule;
 use super::cluster;
 use super::csrf;
-use super::presets::{default_preset, preset, Lens};
+use super::presets::{preset, Lens};
 use super::rank::{build_score_ctx, now_ts, ScoreResult};
-use crate::config::get_setting;
-use crate::server::{RequestExt, ResponseExt};
-use crate::utils::{info, Preferences, Post};
+use super::session::{ensure_sid, local_state_enabled};
+use crate::server::RequestExt;
+use crate::utils::{info, Post, Preferences};
 use askama::Template;
-use cookie::Cookie;
 use hyper::{Body, Request, Response};
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::state::{State, STATE};
 
@@ -21,7 +20,6 @@ struct FeedQuery {
 	lens: Option<String>,
 	preset: Option<String>,
 	clusters: Option<String>,
-	density: Option<String>,
 	limit: Option<u32>,
 }
 
@@ -48,26 +46,23 @@ struct FeedTemplate {
 	csrf: String,
 }
 
-fn local_state_enabled() -> bool {
-	matches!(get_setting("REDLIB_ENABLE_LOCAL_STATE"), Some(v) if v == "on")
-}
-
-fn ensure_sid(req: &Request<Body>, res: &mut Response<Body>) -> Option<String> {
-	if !local_state_enabled() {
-		return None;
+/// Build the subreddit join string for a channel rule.
+/// Returns Err with a user-facing message if no subs are configured.
+pub(super) fn build_fetch_subs(rule: &ChannelRule, prefs: &Preferences) -> Result<String, String> {
+	let mut subs: Vec<String> = rule.sources.subreddits.clone();
+	if rule.sources.subscriptions {
+		for s in &prefs.subscriptions {
+			if !subs.iter().any(|x| x.eq_ignore_ascii_case(s)) {
+				subs.push(s.clone());
+			}
+		}
 	}
-	if let Some(c) = req.cookie("rl_sid") {
-		return Some(c.value().to_string());
+	if subs.is_empty() {
+		return Err(
+			"No subreddits configured for this channel. Add subreddits in channel settings, or enable 'Include subscriptions'.".to_string(),
+		);
 	}
-	let sid = uuid::Uuid::new_v4().to_string();
-	let cookie = Cookie::build(("rl_sid", sid.clone()))
-		.path("/")
-		.http_only(true)
-		.same_site(cookie::SameSite::Lax)
-		.max_age(cookie::time::Duration::days(365))
-		.finish();
-	res.insert_cookie(cookie);
-	Some(sid)
+	Ok(subs.join("+"))
 }
 
 fn build_my_subs_rule(prefs: &Preferences) -> Result<(String, ChannelRule), String> {
@@ -116,38 +111,49 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	let preset_obj = preset(lens, q.preset.as_deref().unwrap_or(""));
 
 	let channel_slug = req.param("channel").unwrap_or_else(|| "my-subs".to_string());
-	let mut res = Response::new(Body::empty());
+	let mut res = hyper::Response::new(Body::empty());
 
-	// Determine user_key (sid) if local state enabled
 	let user_key = ensure_sid(&req, &mut res);
 
-	// System channel: my-subs
+	// Load channel rule
 	let (channel_title, rule) = if channel_slug == "my-subs" {
 		match build_my_subs_rule(&prefs) {
 			Ok(v) => v,
 			Err(msg) => return info(req, &msg).await,
 		}
 	} else {
-		// For now: if you add channel persistence, load ChannelRule JSON from DB here.
-		return info(req, "Only channel 'my-subs' is wired in this skeleton.").await;
+		// Load custom channel from DB
+		let key = match &user_key {
+			Some(k) => k.clone(),
+			None => return info(req, "Enable local state (REDLIB_ENABLE_LOCAL_STATE=on) to use custom channels.").await,
+		};
+		if let State::Sqlite(store) = &*STATE {
+			match store.get_channel(&key, &channel_slug).await? {
+				Some(row) => {
+					let rule: ChannelRule = serde_json::from_str(&row.rule_json).map_err(|e| e.to_string())?;
+					(row.title, rule)
+				}
+				None => return info(req, &format!("Channel '{}' not found.", channel_slug)).await,
+			}
+		} else {
+			return info(req, "Enable local state (REDLIB_ENABLE_LOCAL_STATE=on) to use custom channels.").await;
+		}
 	};
 
-	// Fetch posts (use existing Post::fetch + Redlib's JSON caching)
+	// Build fetch path from rule sources
+	let subs = match build_fetch_subs(&rule, &prefs) {
+		Ok(s) => s,
+		Err(msg) => return info(req, &msg).await,
+	};
 	let limit = q.limit.unwrap_or(100).min(200);
-	let subs = prefs.subscriptions.join("+");
-
-	let mut path = format!(
-		"/r/{}/{sort}.json?limit={limit}&raw_json=1",
-		subs.replace('+', "%2B"),
-		sort = preset_obj.upstream_sort
-	);
+	let mut path = format!("/r/{}/{sort}.json?limit={limit}&raw_json=1", subs.replace('+', "%2B"), sort = preset_obj.upstream_sort);
 	if let Some(t) = preset_obj.upstream_t {
 		path.push_str(&format!("&t={t}"));
 	}
 
 	let (posts, _after) = Post::fetch(&path, false).await?;
 
-	// Load local mutes/read-state/saved-state
+	// Load local state
 	let (mutes, read_map, saved_map) = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
 			let mutes = store.list_mutes(key, "global").await.unwrap_or_default();
@@ -167,17 +173,10 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	let mut scored: Vec<(FeedItem, f64)> = Vec::new();
 
 	for p in posts {
-		// apply mutes
 		if !passes_mutes(&p.title, &p.domain, &p.community, &mutes) {
 			continue;
 		}
-
-		// build score ctx
-		let domain_is_priority = false;
-		let is_pinned_source = false;
-		let ctx = build_score_ctx(&p, now, domain_is_priority, is_pinned_source);
-
-		// gate (preset gate + rule gates)
+		let ctx = build_score_ctx(&p, now, false, false);
 		if !(preset_obj.gate)(&ctx) {
 			continue;
 		}
@@ -195,34 +194,21 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 		let is_read = read_map.get(&p.id).copied().unwrap_or(false);
 		let is_saved = saved_map.get(&p.id).copied().unwrap_or(false);
-		if !local_state_enabled() {
-			// Don't imply read-state when disabled.
-		} else if !is_read {
+		if local_state_enabled() && !is_read {
 			why.insert(0, "Unread".into());
 		}
 
-		scored.push((
-			FeedItem {
-				post: p,
-				is_read,
-				is_saved,
-				why,
-				cluster_id: None,
-				cluster_size: 1,
-			},
-			score,
-		));
+		scored.push((FeedItem { post: p, is_read, is_saved, why, cluster_id: None, cluster_size: 1 }, score));
 	}
 
 	scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-	// Optional clustering (per-page)
+	// Optional clustering
 	let clusters_on = q.clusters.as_deref().unwrap_or(&rule.presentation.clusters) == "on";
 	if clusters_on {
 		let title_items: Vec<(String, String)> = scored.iter().map(|(fi, _)| (fi.post.id.clone(), fi.post.title.clone())).collect();
 		let clusters = cluster::cluster_titles(&title_items, 4);
 
-		// Build post_id -> (cluster_id, size)
 		let mut map: HashMap<String, (String, usize)> = HashMap::new();
 		for (cid, c) in &clusters {
 			let size = c.members.len();
@@ -234,7 +220,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 			}
 		}
 
-		for (fi, _s) in scored.iter_mut() {
+		for (fi, _) in scored.iter_mut() {
 			if let Some((cid, size)) = map.get(&fi.post.id) {
 				fi.cluster_id = Some(cid.clone());
 				fi.cluster_size = *size;
@@ -244,7 +230,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let items: Vec<FeedItem> = scored.into_iter().map(|(fi, _)| fi).collect();
 
-	// Batch update "seen" for local state
+	// Batch "seen" update
 	if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
 			let ids: Vec<String> = items.iter().map(|i| i.post.id.clone()).collect();
@@ -252,7 +238,6 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		}
 	}
 
-	// Render response — insert csrf cookie if needed
 	let csrf_tok = csrf::ensure_csrf_cookie(&req, &mut res);
 	let body = FeedTemplate {
 		channel_slug,

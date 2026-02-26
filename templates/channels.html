@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Channels{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="channels_page">
+  <h2>Smart Channels</h2>
+
+  {% if !channels.is_empty() %}
+  <ul class="channel_list">
+    {% for ch in &channels %}
+    <li class="channel_item">
+      <a href="/reader/{{ ch.slug }}" class="channel_name">{{ ch.title }}</a>
+      <span class="channel_actions">
+        <a href="/channels/{{ ch.slug }}" class="channel_edit_btn">Edit</a>
+        <form action="/channels/{{ ch.slug }}/delete" method="POST" class="channel_delete_form" onsubmit="return confirm('Delete channel {{ ch.title }}?')">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="channel_delete_btn">Delete</button>
+        </form>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="channels_empty">No channels yet. Create one below.</p>
+  {% endif %}
+
+  {% if error != "" %}
+  <p class="form_error">{{ error }}</p>
+  {% endif %}
+
+  <h3>Create Channel</h3>
+  <form action="/channels" method="POST" class="channel_form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+
+    <div class="form_row">
+      <label class="form_label">Name
+        <input type="text" name="title" class="form_input" placeholder="My Tech Feed" maxlength="100" required>
+      </label>
+    </div>
+
+    <div class="form_row">
+      <label class="form_label">Slug <span class="form_hint">(auto-generated if empty)</span>
+        <input type="text" name="slug" class="form_input" placeholder="my-tech-feed" maxlength="50" pattern="[a-z0-9-]+" title="Lowercase letters, numbers, hyphens only">
+      </label>
+    </div>
+
+    <fieldset class="form_fieldset">
+      <legend>Sources</legend>
+      <div class="form_row">
+        <label class="form_check">
+          <input type="checkbox" name="sources_subscriptions" value="on" checked>
+          Include my subscriptions
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Extra subreddits <span class="form_hint">(one per line)</span>
+          <textarea name="sources_subreddits" class="form_textarea" rows="3" placeholder="rust&#10;programming&#10;linux"></textarea>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="form_fieldset">
+      <legend>Gates</legend>
+      <div class="form_row form_row_inline">
+        <label class="form_label">Min comments
+          <input type="number" name="gate_min_comments" class="form_input_sm" value="0" min="0">
+        </label>
+        <label class="form_label">Min score
+          <input type="number" name="gate_min_score" class="form_input_sm" value="0">
+        </label>
+        <label class="form_label">Max age (hours)
+          <input type="number" name="gate_max_age_hours" class="form_input_sm" value="72" min="0">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="form_fieldset">
+      <legend>Presentation</legend>
+      <div class="form_row form_row_inline">
+        <label class="form_label">Clusters
+          <select name="presentation_clusters" class="form_select">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label class="form_label">Density
+          <select name="presentation_density" class="form_select">
+            <option value="balanced">Balanced</option>
+            <option value="comfort">Comfortable</option>
+            <option value="dense">Dense</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <button type="submit" class="form_submit">Create Channel</button>
+  </form>
+</div>
+{% endblock %}
