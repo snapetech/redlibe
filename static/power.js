@@ -130,7 +130,7 @@
 			'<div class="power_palette_header">' +
 			'<input id="power_palette_input" type="search" placeholder="Command palette (Ctrl/Cmd+K)" autocomplete="off">' +
 			'</div>' +
-			'<div class="power_palette_help">Shortcuts: Ctrl/Cmd+K open, j/k comments, [ collapse, ] expand, Shift+C collapse all, Shift+E expand all</div>' +
+			'<div class="power_palette_help">Shortcuts: Ctrl/Cmd+K open, j/k navigate, o open, r read, s save (feed) | [ collapse, ] expand, Shift+C/E (comments)</div>' +
 			'<ul id="power_palette_list" class="power_palette_list" role="listbox"></ul>' +
 			'</div>';
 		document.body.appendChild(palette);
@@ -590,6 +590,141 @@
 		});
 	}
 
+	/* ── Reader Feed Keyboard Nav ────────────────────────────── */
+	function attachFeedKeyNav() {
+		var container = document.getElementById("feed_items");
+		if (!container) return;
+
+		var items = Array.prototype.slice.call(container.querySelectorAll(".feed_item[data-feed-post-id]"));
+		if (!items.length) return;
+
+		var currentIdx = -1;
+
+		function getCsrf() {
+			return container.getAttribute("data-csrf") || "";
+		}
+
+		function focusItem(idx) {
+			if (idx < 0 || idx >= items.length) return;
+			currentIdx = idx;
+			items[idx].scrollIntoView({ behavior: "smooth", block: "nearest" });
+			items[idx].focus();
+			items.forEach(function(el, i) { el.classList.toggle("feed_item_focused", i === idx); });
+		}
+
+		function visibleIdx() {
+			// Find the first item whose top is at or below the viewport top
+			var scrollY = window.scrollY || window.pageYOffset;
+			var vpTop = scrollY + 60; // account for fixed nav
+			var best = 0;
+			for (var i = 0; i < items.length; i++) {
+				if (items[i].getBoundingClientRect().top + scrollY >= vpTop) { best = i; break; }
+				best = i;
+			}
+			return best;
+		}
+
+		function postAction(endpoint, postId) {
+			var csrf = getCsrf();
+			if (!csrf || !postId) return;
+			fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				body: "csrf=" + encodeURIComponent(csrf) + "&post_id=" + encodeURIComponent(postId),
+				credentials: "same-origin"
+			}).catch(function() {});
+		}
+
+		document.addEventListener("keydown", function(e) {
+			var t = e.target;
+			if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+			// Only activate on feed pages
+			if (!container) return;
+
+			if (e.key === "j") {
+				e.preventDefault();
+				var next = currentIdx < 0 ? visibleIdx() : Math.min(currentIdx + 1, items.length - 1);
+				focusItem(next);
+			} else if (e.key === "k") {
+				e.preventDefault();
+				var prev = currentIdx <= 0 ? 0 : currentIdx - 1;
+				focusItem(prev);
+			} else if (e.key === "o" || e.key === "Enter") {
+				if (currentIdx < 0) return;
+				var item = items[currentIdx];
+				var openUrl = item.getAttribute("data-feed-open-url");
+				if (openUrl) { window.location.href = openUrl; }
+			} else if (e.key === "r") {
+				if (currentIdx < 0) return;
+				var item = items[currentIdx];
+				var postId = item.getAttribute("data-feed-post-id");
+				var isRead = item.classList.contains("feed_item_read");
+				var endpoint = isRead ? "/action/mark_unread" : "/action/mark_read";
+				postAction(endpoint, postId);
+				item.classList.toggle("feed_item_read", !isRead);
+				item.classList.toggle("feed_item_unread", isRead);
+			} else if (e.key === "s") {
+				if (currentIdx < 0) return;
+				var item = items[currentIdx];
+				var postId = item.getAttribute("data-feed-post-id");
+				var isSaved = item.classList.contains("feed_item_saved");
+				var endpoint = isSaved ? "/action/unsave" : "/action/save";
+				postAction(endpoint, postId);
+				item.classList.toggle("feed_item_saved", !isSaved);
+			}
+		});
+	}
+
+	/* ── Scroll-to-Read (IntersectionObserver) ───────────────── */
+	function attachScrollToRead() {
+		var container = document.getElementById("feed_items");
+		if (!container) return;
+		if (!window.IntersectionObserver) return;
+
+		var csrf = container.getAttribute("data-csrf") || "";
+		if (!csrf) return; // local state not enabled
+
+		var dwellTimers = {};
+		var DWELL_MS = 2000;
+
+		var observer = new IntersectionObserver(function(entries) {
+			entries.forEach(function(entry) {
+				var el = entry.target;
+				var postId = el.getAttribute("data-feed-post-id");
+				if (!postId) return;
+
+				if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+					// Start dwell timer
+					if (!dwellTimers[postId]) {
+						dwellTimers[postId] = setTimeout(function() {
+							delete dwellTimers[postId];
+							if (!el.classList.contains("feed_item_read")) {
+								fetch("/action/mark_read", {
+									method: "POST",
+									headers: { "Content-Type": "application/x-www-form-urlencoded" },
+									body: "csrf=" + encodeURIComponent(csrf) + "&post_id=" + encodeURIComponent(postId),
+									credentials: "same-origin"
+								}).catch(function() {});
+								el.classList.add("feed_item_read");
+								el.classList.remove("feed_item_unread");
+							}
+						}, DWELL_MS);
+					}
+				} else {
+					// Cancel dwell timer
+					if (dwellTimers[postId]) {
+						clearTimeout(dwellTimers[postId]);
+						delete dwellTimers[postId];
+					}
+				}
+			});
+		}, { threshold: 0.5 });
+
+		container.querySelectorAll(".feed_item[data-feed-post-id]").forEach(function(el) {
+			observer.observe(el);
+		});
+	}
+
 	function init() {
 		attachGlobalKeyboard();
 		attachLocalTools();
@@ -602,6 +737,8 @@
 		attachLayoutSwitcher();
 		attachPostStatus();
 		attachFeedFilter();
+		attachFeedKeyNav();
+		attachScrollToRead();
 	}
 
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

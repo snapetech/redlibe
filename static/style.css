@@ -4676,4 +4676,38 @@ main > * > footer > a:active {
 /* Saved posts page */
 .feed_saved_label { font-size: 0.75rem; opacity: 0.55; font-style: italic; }
 
+/* Mutes export/import */
+.mutes_io_section { margin-bottom: 1.5rem; }
+.mutes_io_section h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+.mutes_export_link { font-size: 0.9rem; }
+.mutes_import_details { margin-top: 0.75rem; }
+.mutes_import_details summary { font-size: 0.9rem; cursor: pointer; opacity: 0.8; }
+.mutes_import_form { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.mutes_import_textarea { width: 100%; font-size: 0.78rem; font-family: monospace; border: 1px solid var(--highlighted); border-radius: 6px; padding: 0.5rem; background: var(--background); color: var(--text); resize: vertical; }
+
+/* Feed keyboard nav focus */
+.feed_item_focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Feed load more */
+.feed_load_more { text-align: center; padding: 1.5rem 0; }
+.feed_load_more_btn { display: inline-block; padding: 0.5rem 1.5rem; border: 1px solid var(--highlighted); border-radius: 6px; font-size: 0.9rem; background: var(--post); color: var(--text); text-decoration: none; transition: background 0.15s; }
+.feed_load_more_btn:hover { background: var(--highlighted); }
+
+/* Keyword mute inline form in feed actions */
+.feed_mute_kw_form { display: inline-flex; gap: 0.3rem; align-items: center; }
+.feed_mute_kw_input { font-size: 0.78rem; padding: 2px 6px; border: 1px solid var(--highlighted); border-radius: 4px; background: var(--background); color: var(--text); width: 100px; }
+
+/* Stats page */
+#stats_page { max-width: 700px; padding: 1rem; }
+.stats_header h1 { font-size: 1.3rem; margin: 0 0 1rem; }
+.stats_grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+.stats_card { background: var(--post); border-radius: 8px; padding: 0.75rem 1rem; text-align: center; }
+.stats_card_value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+.stats_card_label { font-size: 0.78rem; opacity: 0.6; margin-top: 0.15rem; }
+.stats_section h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+.stats_community_list { padding: 0 0 0 1.2rem; margin: 0 0 2rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.stats_community_list li { font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+.stats_community_count { opacity: 0.55; font-size: 0.82rem; }
+.stats_back { font-size: 0.85rem; opacity: 0.7; }
+
 /* ── end smart feed ───────────────────────────────────────── */

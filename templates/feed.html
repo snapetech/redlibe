@@ -57,7 +57,7 @@
 </details>
 {% endif %}
 
-<div id="feed_items">
+<div id="feed_items" data-csrf="{{ csrf }}">
 {% if items.is_empty() %}
   <p style="padding: 1rem; opacity: 0.65;">
     {% if filter == "unread" %}No unread posts.
@@ -67,7 +67,10 @@
   </p>
 {% else %}
 {% for item in &items %}
-  <div class="feed_item{% if item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}">
+  <div class="feed_item{% if item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}"
+       data-feed-post-id="{{ item.post.id }}"
+       data-feed-open-url="/action/open?post_id={{ item.post.id }}&url={{ item.post.permalink }}"
+       tabindex="-1">
     <div class="feed_item_title">
       {% if csrf != "" %}
         <a href="/action/open?post_id={{ item.post.id }}&url={{ item.post.permalink }}">{{ item.post.title }}</a>
@@ -127,10 +130,20 @@
         <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute {{ item.post.domain }}">Mute domain</button>
       </form>
       {% endif %}
+      <form action="/action/mute_keyword" method="POST" class="feed_mute_kw_form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="text" name="pattern" class="feed_mute_kw_input" placeholder="Mute keyword…" maxlength="80">
+        <button type="submit" class="feed_action_btn feed_mute_btn">Mute kw</button>
+      </form>
     </div>
     {% endif %}
   </div>
 {% endfor %}
+{% if after != "" %}
+<div class="feed_load_more">
+  <a href="?lens={{ lens }}&preset={{ preset }}&filter={{ filter }}&after={{ after }}" class="feed_load_more_btn">Load more</a>
+</div>
+{% endif %}
 {% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Reading Stats{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="stats_page">
+  <div class="stats_header">
+    <h1>Reading Stats</h1>
+  </div>
+
+  <div class="stats_grid">
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_seen }}</div>
+      <div class="stats_card_label">Posts seen</div>
+    </div>
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_read }}</div>
+      <div class="stats_card_label">Posts read</div>
+    </div>
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_saved }}</div>
+      <div class="stats_card_label">Saved</div>
+    </div>
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_mutes }}</div>
+      <div class="stats_card_label">Mute rules</div>
+    </div>
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_channels }}</div>
+      <div class="stats_card_label">Channels</div>
+    </div>
+    {% if stats.total_seen > 0 %}
+    <div class="stats_card">
+      <div class="stats_card_value">{{ stats.total_read * 100 / stats.total_seen }}%</div>
+      <div class="stats_card_label">Read rate</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if !stats.top_communities.is_empty() %}
+  <div class="stats_section">
+    <h2>Top communities</h2>
+    <ol class="stats_community_list">
+      {% for (community, count) in &stats.top_communities %}
+      <li>
+        <a href="/r/{{ community }}">r/{{ community }}</a>
+        <span class="stats_community_count">{{ count }} posts</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  <div class="stats_back">
+    <a href="/reader/my-subs">← Back to feed</a>
+    <span style="margin: 0 0.5rem;">·</span>
+    <a href="/mutes">Mutes</a>
+    <span style="margin: 0 0.5rem;">·</span>
+    <a href="/reader/saved">Saved posts</a>
+  </div>
+</div>
+{% endblock %}

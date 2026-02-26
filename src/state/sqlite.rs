@@ -34,6 +34,16 @@ pub struct PostCacheEntry {
 	pub created_utc: i64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ReadingStats {
+	pub total_seen: i64,
+	pub total_read: i64,
+	pub total_saved: i64,
+	pub total_mutes: i64,
+	pub total_channels: i64,
+	pub top_communities: Vec<(String, i64)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SavedPostRow {
 	pub post_id: String,
@@ -68,6 +78,7 @@ impl SqliteStore {
 				.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
 				.map_err(|e| e.to_string())?;
 			migrate(&conn)?;
+			prune_old_state(&conn)?;
 		}
 
 		Ok(Self { pool })
@@ -499,6 +510,69 @@ impl SqliteStore {
 		.await
 		.map_err(|e| e.to_string())?
 	}
+
+	// ---- Stats ----
+
+	pub async fn get_stats(&self, user_key: &str) -> Result<ReadingStats, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			let total_seen: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1", params![user_key], |r| r.get(0))
+				.unwrap_or(0);
+			let total_read: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1", params![user_key], |r| r.get(0))
+				.unwrap_or(0);
+			let total_saved: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND saved_at IS NOT NULL", params![user_key], |r| r.get(0))
+				.unwrap_or(0);
+			let total_mutes: i64 = conn
+				.query_row("SELECT COUNT(*) FROM mute_rule WHERE user_key = ?1", params![user_key], |r| r.get(0))
+				.unwrap_or(0);
+			let total_channels: i64 = conn
+				.query_row("SELECT COUNT(*) FROM channel WHERE user_key = ?1", params![user_key], |r| r.get(0))
+				.unwrap_or(0);
+			// Top 10 communities by posts seen
+			let mut stmt = conn
+				.prepare(
+					"SELECT pc.community, COUNT(*) as cnt
+					FROM post_state ps JOIN post_cache pc ON ps.post_id = pc.post_id
+					WHERE ps.user_key = ?1
+					GROUP BY pc.community ORDER BY cnt DESC LIMIT 10",
+				)
+				.map_err(|e| e.to_string())?;
+			let top_communities: Vec<(String, i64)> = stmt
+				.query_map(params![user_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+				.map_err(|e| e.to_string())?
+				.filter_map(|r| r.ok())
+				.collect();
+			Ok(ReadingStats { total_seen, total_read, total_saved, total_mutes, total_channels, top_communities })
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	// ---- Mute export/import ----
+
+	pub async fn export_mutes(&self, user_key: &str) -> Result<Vec<(String, String)>, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			let mut stmt = conn
+				.prepare("SELECT rule_type, pattern FROM mute_rule WHERE user_key = ?1 ORDER BY created_at ASC")
+				.map_err(|e| e.to_string())?;
+			let rows = stmt
+				.query_map(params![user_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+				.map_err(|e| e.to_string())?
+				.filter_map(|r| r.ok())
+				.collect();
+			Ok(rows)
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
 }
 
 fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -601,5 +675,22 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 		)
 		.map_err(|e| e.to_string())?;
 
+	Ok(())
+}
+
+fn prune_old_state(conn: &rusqlite::Connection) -> Result<(), String> {
+	// Keep 90 days of post_state; never delete saved posts
+	let cutoff = now_ts() - (90 * 24 * 3600);
+	conn.execute(
+		"DELETE FROM post_state WHERE last_seen_at < ?1 AND saved_at IS NULL",
+		params![cutoff],
+	)
+	.map_err(|e| e.to_string())?;
+	// Prune post_cache entries older than 90 days with no associated post_state
+	conn.execute(
+		"DELETE FROM post_cache WHERE cached_at < ?1 AND post_id NOT IN (SELECT post_id FROM post_state)",
+		params![cutoff],
+	)
+	.map_err(|e| e.to_string())?;
 	Ok(())
 }

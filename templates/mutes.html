@@ -44,10 +44,25 @@
       <button type="submit" class="form_submit">Add</button>
     </form>
   </div>
+
+  <div class="mutes_io_section">
+    <h2>Export / Import</h2>
+    <p><a href="/mutes/export.json" class="mutes_export_link">Download mutes.json</a></p>
+    <details class="mutes_import_details">
+      <summary>Import from JSON</summary>
+      <form action="/mutes/import" method="POST" class="mutes_import_form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <textarea name="json" class="mutes_import_textarea" rows="6" placeholder='[{"rule_type":"keyword","pattern":"foo"},...]'></textarea>
+        <button type="submit" class="form_submit">Import</button>
+      </form>
+    </details>
+  </div>
   {% endif %}
 
   <div class="mutes_back">
     <a href="/reader/my-subs">← Back to feed</a>
+    <span style="margin: 0 0.5rem;">·</span>
+    <a href="/stats">Reading stats</a>
   </div>
 </div>
 {% endblock %}

@@ -4,6 +4,7 @@ use crate::state::{MuteRule, State, STATE};
 use crate::utils::{info, Preferences};
 use askama::Template;
 use hyper::{Body, Request, Response};
+use serde::{Deserialize, Serialize};
 
 #[derive(Template)]
 #[template(path = "mutes.html")]
@@ -68,4 +69,64 @@ pub async fn action_unmute(mut req: Request<Body>) -> Result<Response<Body>, Str
 	Ok(crate::utils::redirect(
 		form.get("back").map(|s| s.as_str()).unwrap_or("/mutes"),
 	))
+}
+
+#[derive(Serialize, Deserialize)]
+struct MuteExportEntry {
+	rule_type: String,
+	pattern: String,
+}
+
+pub async fn action_export_mutes(req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut res = Response::new(Body::empty());
+	let user_key = ensure_sid(&req, &mut res);
+	if !local_state_enabled() {
+		return info(req, "Local state disabled.").await;
+	}
+	let key = match user_key {
+		Some(k) => k,
+		None => return info(req, "No session.").await,
+	};
+
+	let pairs = if let State::Sqlite(store) = &*STATE {
+		store.export_mutes(&key).await.unwrap_or_default()
+	} else {
+		Vec::new()
+	};
+
+	let entries: Vec<MuteExportEntry> = pairs
+		.into_iter()
+		.map(|(rule_type, pattern)| MuteExportEntry { rule_type, pattern })
+		.collect();
+
+	let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
+	let mut out = Response::new(Body::from(json));
+	out.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("application/json"));
+	out.headers_mut().insert(
+		"content-disposition",
+		hyper::header::HeaderValue::from_static("attachment; filename=\"mutes.json\""),
+	);
+	Ok(out)
+}
+
+pub async fn action_import_mutes(mut req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut res = Response::new(Body::empty());
+	let user_key = require_user_key(&req, &mut res).await?;
+	let form = read_form(&mut req).await?;
+	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
+
+	let json_str = form.get("json").cloned().unwrap_or_default();
+	let entries: Vec<MuteExportEntry> = serde_json::from_str(&json_str).map_err(|e| format!("Invalid JSON: {e}"))?;
+
+	if let State::Sqlite(store) = &*STATE {
+		for e in &entries {
+			let rule_type = e.rule_type.as_str();
+			if !["keyword", "domain", "subreddit"].contains(&rule_type) {
+				continue;
+			}
+			let _ = store.add_mute(&user_key, "global", rule_type, &e.pattern).await;
+		}
+	}
+
+	Ok(crate::utils::redirect("/mutes"))
 }

@@ -21,6 +21,7 @@ struct FeedQuery {
 	clusters: Option<String>,
 	limit: Option<u32>,
 	filter: Option<String>,  // "all" | "unread" | "saved"
+	after: Option<String>,
 }
 
 pub struct FeedItem {
@@ -47,6 +48,7 @@ struct FeedTemplate {
 	new_count: usize,
 	filter: String,
 	total_count: usize,
+	after: String,
 }
 
 /// Build the subreddit join string for a channel rule.
@@ -153,8 +155,13 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	if let Some(t) = preset_obj.upstream_t {
 		path.push_str(&format!("&t={t}"));
 	}
+	if let Some(ref after_tok) = q.after {
+		if !after_tok.is_empty() {
+			path.push_str(&format!("&after={}", after_tok));
+		}
+	}
 
-	let (posts, _after) = Post::fetch(&path, false).await?;
+	let (posts, after_cursor) = Post::fetch(&path, false).await?;
 
 	// Cache post metadata (for saved posts view) — fire and forget
 	if local_state_enabled() {
@@ -293,6 +300,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		new_count,
 		filter: filter.to_string(),
 		total_count,
+		after: after_cursor,
 	};
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
