@@ -8,10 +8,11 @@ use uuid::Uuid;
 use super::{ImportedBrowserSession, LocalProfile};
 
 pub fn discover_profiles(browser: &str) -> Vec<LocalProfile> {
-	let Some(base) = firefox_base_dir(browser) else {
-		return Vec::new();
-	};
-	discover_profiles_in_base(browser, &base)
+	let mut out = Vec::new();
+	for base in firefox_base_dirs(browser) {
+		out.extend(discover_profiles_in_base(browser, &base));
+	}
+	out
 }
 
 pub fn discover_profiles_in_base(browser: &str, base: &Path) -> Vec<LocalProfile> {
@@ -139,50 +140,54 @@ fn display_browser(browser: &str) -> &'static str {
 	}
 }
 
-fn firefox_base_dir(browser: &str) -> Option<PathBuf> {
+fn firefox_base_dirs(browser: &str) -> Vec<PathBuf> {
+	let mut out = Vec::new();
+
 	if cfg!(target_os = "windows") {
-		let appdata = env::var_os("APPDATA")?;
-		let mut p = PathBuf::from(appdata);
-		match browser {
-			"librewolf" => {
-				p.push("LibreWolf");
-				p.push("Profiles");
+		if let Some(appdata) = env::var_os("APPDATA") {
+			let mut p = PathBuf::from(appdata);
+			match browser {
+				"librewolf" => { p.push("LibreWolf"); p.push("Profiles"); }
+				_ => { p.push("Mozilla"); p.push("Firefox"); p.push("Profiles"); }
 			}
-			_ => {
-				p.push("Mozilla");
-				p.push("Firefox");
-				p.push("Profiles");
-			}
+			out.push(p);
 		}
-		return Some(p);
+		return out;
 	}
 
 	if cfg!(target_os = "macos") {
-		let home = env::var_os("HOME")?;
-		let mut p = PathBuf::from(home);
-		p.push("Library");
-		p.push("Application Support");
-		match browser {
-			"librewolf" => {
-				p.push("LibreWolf");
-				p.push("Profiles");
+		if let Some(home) = env::var_os("HOME") {
+			let mut p = PathBuf::from(home);
+			p.push("Library");
+			p.push("Application Support");
+			match browser {
+				"librewolf" => { p.push("LibreWolf"); p.push("Profiles"); }
+				_ => { p.push("Firefox"); p.push("Profiles"); }
 			}
-			_ => {
-				p.push("Firefox");
-				p.push("Profiles");
-			}
+			out.push(p);
 		}
-		return Some(p);
+		return out;
 	}
 
-	let home = env::var_os("HOME")?;
-	let mut p = PathBuf::from(home);
-	match browser {
-		"librewolf" => p.push(".librewolf"),
-		_ => {
-			p.push(".mozilla");
-			p.push("firefox");
+	// Linux: try all known profile locations for this browser
+	if let Some(home) = env::var_os("HOME") {
+		let home = PathBuf::from(home);
+		match browser {
+			"librewolf" => {
+				// Traditional: ~/.librewolf
+				out.push(home.join(".librewolf"));
+				// XDG / packaged installs: ~/.config/librewolf/librewolf
+				out.push(home.join(".config").join("librewolf").join("librewolf"));
+				// Flatpak: ~/.var/app/io.gitlab.librewolf-community/.librewolf
+				out.push(home.join(".var").join("app").join("io.gitlab.librewolf-community").join(".librewolf"));
+			}
+			_ => {
+				// Firefox: ~/.mozilla/firefox
+				out.push(home.join(".mozilla").join("firefox"));
+				// Flatpak Firefox: ~/.var/app/org.mozilla.firefox/.mozilla/firefox
+				out.push(home.join(".var").join("app").join("org.mozilla.firefox").join(".mozilla").join("firefox"));
+			}
 		}
 	}
-	Some(p)
+	out
 }

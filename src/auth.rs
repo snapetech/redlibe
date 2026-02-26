@@ -838,10 +838,21 @@ fn render_login_error(prefs: &Preferences, msg: &str) -> Result<Response<Body>, 
 /// the browser choice. "auto" searches all known Firefox-based profile dirs.
 fn browser_script_parts(browser: &str) -> (&'static str, &'static str) {
 	match browser {
-		"firefox" => ("~/.mozilla/firefox", "firefox"),
-		"librewolf" => ("~/.librewolf", "librewolf"),
-		// auto: try LibreWolf then Firefox (most common Firefox-based browsers on Linux)
-		_ => ("~/.librewolf ~/.mozilla/firefox ~/.waterfox", "librewolf 2>/dev/null || firefox"),
+		"firefox" => (
+			"~/.mozilla/firefox ~/.var/app/org.mozilla.firefox/.mozilla/firefox",
+			"firefox",
+		),
+		"librewolf" => (
+			// LibreWolf may be at ~/.librewolf (traditional) or ~/.config/librewolf/librewolf (XDG/packaged)
+			"~/.librewolf ~/.config/librewolf/librewolf ~/.var/app/io.gitlab.librewolf-community/.librewolf",
+			"librewolf",
+		),
+		// auto: try all known paths for both browsers
+		_ => (
+			"~/.librewolf ~/.config/librewolf/librewolf ~/.mozilla/firefox \
+~/.var/app/io.gitlab.librewolf-community/.librewolf ~/.var/app/org.mozilla.firefox/.mozilla/firefox",
+			"librewolf 2>/dev/null || firefox",
+		),
 	}
 }
 
