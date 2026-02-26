@@ -4827,4 +4827,32 @@ main > * > footer > a:active {
 /* Score in feed meta */
 .feed_score { font-size: 0.78rem; opacity: 0.65; font-weight: 600; }
 
+/* Feed density modes */
+.feed_density_dense .feed_item { padding: 0.3rem 0.75rem; }
+.feed_density_dense .feed_item_title a { font-size: 0.9rem; }
+.feed_density_dense .feed_thumb { width: 56px; height: 42px; }
+.feed_density_comfort .feed_item { padding: 0.9rem 1rem; }
+.feed_density_comfort .feed_item_title a { font-size: 1.05rem; }
+
+/* Inbox badge on nav user link */
+#logged_in_user { position: relative; }
+.inbox_nav_badge {
+	position: absolute;
+	top: -4px;
+	right: -8px;
+	background: #e05;
+	color: #fff;
+	font-size: 0.6rem;
+	font-weight: 700;
+	line-height: 1;
+	padding: 2px 4px;
+	border-radius: 8px;
+	min-width: 14px;
+	text-align: center;
+	pointer-events: none;
+}
+
+/* Channel filter fieldset */
+.form_check_group { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.3rem; }
+
 /* ── end smart feed ───────────────────────────────────────── */

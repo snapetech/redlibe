@@ -79,6 +79,50 @@
       </div>
     </fieldset>
 
+
+    <fieldset class="form_fieldset">
+      <legend>Filters</legend>
+      <div class="form_row">
+        <label class="form_label">Include keywords <span class="form_hint">(title must match at least one; one per line)</span>
+          <textarea name="filters_include_keywords" class="form_textarea" rows="2">{{ rule.filters.include_keywords.join("\n") }}</textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Exclude keywords <span class="form_hint">(hide if title matches any)</span>
+          <textarea name="filters_exclude_keywords" class="form_textarea" rows="2">{{ rule.filters.exclude_keywords.join("\n") }}</textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Allow domains only <span class="form_hint">(blank = all)</span>
+          <textarea name="filters_domains_allow" class="form_textarea" rows="2">{{ rule.filters.domains_allow.join("\n") }}</textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Block domains
+          <textarea name="filters_domains_block" class="form_textarea" rows="2">{{ rule.filters.domains_block.join("\n") }}</textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Media types
+          <div class="form_check_group" id="edit_media_types">
+            {% for mt in ["self", "link", "image", "video", "gif", "gallery"] %}
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="{{ mt }}"{% if rule.filters.media_types.contains(&mt.to_string()) %} checked{% endif %}> {{ mt }}</label>
+            {% endfor %}
+          </div>
+          <input type="hidden" name="filters_media_types" id="edit_media_types_val" value="{{ rule.filters.media_types.join(",") }}">
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">NSFW
+          <select name="filters_nsfw" class="form_select">
+            <option value="hide"{% if rule.filters.nsfw == "hide" %} selected{% endif %}>Hide</option>
+            <option value="blur"{% if rule.filters.nsfw == "blur" %} selected{% endif %}>Blur</option>
+            <option value="show"{% if rule.filters.nsfw == "show" %} selected{% endif %}>Show</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
     <div class="form_actions">
       <button type="submit" class="form_submit">Save Changes</button>
       <form action="/channels/{{ slug }}/delete" method="POST" class="channel_delete_inline" onsubmit="return confirm('Delete this channel?')">

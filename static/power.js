@@ -788,6 +788,42 @@
 			.catch(function() {});
 	}
 
+	/* ── Inbox unread badge for logged-in users ──────────────── */
+	function attachInboxBadge() {
+		var userMenu = document.getElementById("logged_in_user");
+		if (!userMenu) return; // not logged in
+		fetch("/api/v1/me", { credentials: "same-origin" })
+			.then(function(r) { return r.ok ? r.json() : null; })
+			.then(function(data) {
+				if (!data) return;
+				var has_mail = data.has_mail || (data.data && data.data.has_mail);
+				var count = data.inbox_count || (data.data && data.data.inbox_count) || 0;
+				if (!has_mail && count <= 0) return;
+				var badge = document.createElement("span");
+				badge.className = "inbox_nav_badge";
+				badge.textContent = count > 0 ? (count > 99 ? "99+" : String(count)) : "●";
+				userMenu.appendChild(badge);
+			})
+			.catch(function() {});
+	}
+
+	/* ── Media type checkbox → hidden field sync ─────────────── */
+	function attachMediaTypeSync() {
+		document.querySelectorAll(".form_check_group[id$='_media_types']").forEach(function(group) {
+			var hiddenId = group.id + "_val";
+			var hidden = document.getElementById(hiddenId);
+			if (!hidden) return;
+			function sync() {
+				var checked = [];
+				group.querySelectorAll(".media_type_cb:checked").forEach(function(cb) { checked.push(cb.value); });
+				hidden.value = checked.join(",");
+			}
+			group.querySelectorAll(".media_type_cb").forEach(function(cb) {
+				cb.addEventListener("change", sync);
+			});
+		});
+	}
+
 	function init() {
 		attachGlobalKeyboard();
 		attachLocalTools();
@@ -804,6 +840,8 @@
 		attachFeedKeyNav();
 		attachScrollToRead();
 		attachReaderBadge();
+		attachInboxBadge();
+		attachMediaTypeSync();
 	}
 
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

@@ -67,7 +67,7 @@
 </details>
 {% endif %}
 
-<div id="feed_items" data-csrf="{{ csrf }}">
+<div id="feed_items" data-csrf="{{ csrf }}" class="feed_density_{{ density }}">
 {% if items.is_empty() %}
   <p style="padding: 1rem; opacity: 0.65;">
     {% if filter == "unread" %}No unread posts.

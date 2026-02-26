@@ -68,6 +68,14 @@ fn parse_subreddits(input: &str) -> Vec<String> {
 		.collect()
 }
 
+fn parse_multiline(input: &str) -> Vec<String> {
+	input
+		.split(|c: char| c == '\n' || c == ',')
+		.map(|s| s.trim().to_string())
+		.filter(|s| !s.is_empty() && s.len() <= 100)
+		.collect()
+}
+
 fn parse_channel_form(form: &HashMap<String, String>) -> Result<(String, String, ChannelRule), String> {
 	let title = form.get("title").map(|s| s.trim().to_string()).unwrap_or_default();
 	if title.is_empty() {
@@ -96,15 +104,28 @@ fn parse_channel_form(form: &HashMap<String, String>) -> Result<(String, String,
 	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") { "off" } else { "on" };
 	let density = form.get("presentation_density").map(|s| s.as_str()).unwrap_or("balanced").to_string();
 
+	let include_keywords = parse_multiline(form.get("filters_include_keywords").map(|s| s.as_str()).unwrap_or(""));
+	let exclude_keywords = parse_multiline(form.get("filters_exclude_keywords").map(|s| s.as_str()).unwrap_or(""));
+	let domains_allow = parse_multiline(form.get("filters_domains_allow").map(|s| s.as_str()).unwrap_or(""));
+	let domains_block = parse_multiline(form.get("filters_domains_block").map(|s| s.as_str()).unwrap_or(""));
+	// media_types: collect all checked values via comma-joined hidden field
+	let media_types_raw = form.get("filters_media_types").map(|s| s.as_str()).unwrap_or("self,link,image,video,gif,gallery");
+	let media_types: Vec<String> = media_types_raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+	let nsfw = match form.get("filters_nsfw").map(|s| s.as_str()).unwrap_or("hide") {
+		"show" => "show",
+		"blur" => "blur",
+		_ => "hide",
+	}.to_string();
+
 	let rule = ChannelRule {
 		sources: Sources { subscriptions, subreddits },
 		filters: Filters {
-			include_keywords: Vec::new(),
-			exclude_keywords: Vec::new(),
-			domains_allow: Vec::new(),
-			domains_block: Vec::new(),
-			media_types: vec!["self".into(), "link".into(), "image".into(), "video".into(), "gif".into(), "gallery".into()],
-			nsfw: "hide".into(),
+			include_keywords,
+			exclude_keywords,
+			domains_allow,
+			domains_block,
+			media_types,
+			nsfw,
 		},
 		gates: Gates { min_comments, min_score, max_age_hours },
 		presentation: Presentation { clusters: clusters.to_string(), density },
@@ -246,15 +267,27 @@ pub async fn channels_update(mut req: Request<Body>) -> Result<Response<Body>, S
 	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") { "off" } else { "on" };
 	let density = form.get("presentation_density").map(|s| s.as_str()).unwrap_or("balanced").to_string();
 
+	let include_keywords = parse_multiline(form.get("filters_include_keywords").map(|s| s.as_str()).unwrap_or(""));
+	let exclude_keywords = parse_multiline(form.get("filters_exclude_keywords").map(|s| s.as_str()).unwrap_or(""));
+	let domains_allow = parse_multiline(form.get("filters_domains_allow").map(|s| s.as_str()).unwrap_or(""));
+	let domains_block = parse_multiline(form.get("filters_domains_block").map(|s| s.as_str()).unwrap_or(""));
+	let media_types_raw = form.get("filters_media_types").map(|s| s.as_str()).unwrap_or("self,link,image,video,gif,gallery");
+	let media_types: Vec<String> = media_types_raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+	let nsfw = match form.get("filters_nsfw").map(|s| s.as_str()).unwrap_or("hide") {
+		"show" => "show",
+		"blur" => "blur",
+		_ => "hide",
+	}.to_string();
+
 	let rule = ChannelRule {
 		sources: Sources { subscriptions, subreddits },
 		filters: Filters {
-			include_keywords: Vec::new(),
-			exclude_keywords: Vec::new(),
-			domains_allow: Vec::new(),
-			domains_block: Vec::new(),
-			media_types: vec!["self".into(), "link".into(), "image".into(), "video".into(), "gif".into(), "gallery".into()],
-			nsfw: "hide".into(),
+			include_keywords,
+			exclude_keywords,
+			domains_allow,
+			domains_block,
+			media_types,
+			nsfw,
 		},
 		gates: Gates { min_comments, min_score, max_age_hours },
 		presentation: Presentation { clusters: clusters.to_string(), density },

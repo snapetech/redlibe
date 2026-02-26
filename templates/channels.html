@@ -118,6 +118,53 @@
       </div>
     </fieldset>
 
+
+    <fieldset class="form_fieldset">
+      <legend>Filters</legend>
+      <div class="form_row">
+        <label class="form_label">Include keywords <span class="form_hint">(title must match at least one; one per line)</span>
+          <textarea name="filters_include_keywords" class="form_textarea" rows="2" placeholder="breaking&#10;release"></textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Exclude keywords <span class="form_hint">(hide posts whose title matches any)</span>
+          <textarea name="filters_exclude_keywords" class="form_textarea" rows="2" placeholder="drama&#10;rant"></textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Allow domains only <span class="form_hint">(comma or newline separated; blank = all)</span>
+          <textarea name="filters_domains_allow" class="form_textarea" rows="2" placeholder="github.com&#10;arxiv.org"></textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Block domains <span class="form_hint">(comma or newline separated)</span>
+          <textarea name="filters_domains_block" class="form_textarea" rows="2" placeholder="youtube.com"></textarea>
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">Media types <span class="form_hint">(comma-joined, sent as hidden field; check JS in form)</span>
+          <div class="form_check_group" id="create_media_types">
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="self" checked> Text</label>
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="link" checked> Link</label>
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="image" checked> Image</label>
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="video" checked> Video</label>
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="gif" checked> GIF</label>
+            <label class="form_check"><input type="checkbox" class="media_type_cb" value="gallery" checked> Gallery</label>
+          </div>
+          <input type="hidden" name="filters_media_types" id="create_media_types_val" value="self,link,image,video,gif,gallery">
+        </label>
+      </div>
+      <div class="form_row">
+        <label class="form_label">NSFW
+          <select name="filters_nsfw" class="form_select">
+            <option value="hide" selected>Hide</option>
+            <option value="blur">Blur</option>
+            <option value="show">Show</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
     <button type="submit" class="form_submit">Create Channel</button>
   </form>
 </div>

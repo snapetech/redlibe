@@ -53,6 +53,7 @@ struct FeedTemplate {
 	unread_count: usize,
 	saved_count: usize,
 	after: String,
+	density: String,
 }
 
 /// Build the subreddit join string for a channel rule.
@@ -111,6 +112,55 @@ fn passes_mutes(title: &str, domain: &str, subreddit: &str, mutes: &[crate::stat
 	true
 }
 
+fn passes_channel_filters(post: &Post, filters: &super::channel::Filters) -> bool {
+	// include_keywords: title must contain at least one (if list is non-empty)
+	if !filters.include_keywords.is_empty() {
+		let t = post.title.to_lowercase();
+		if !filters.include_keywords.iter().any(|k| t.contains(&k.to_lowercase())) {
+			return false;
+		}
+	}
+	// exclude_keywords: title must not contain any
+	if !filters.exclude_keywords.is_empty() {
+		let t = post.title.to_lowercase();
+		if filters.exclude_keywords.iter().any(|k| t.contains(&k.to_lowercase())) {
+			return false;
+		}
+	}
+	// domains_allow: if set, domain must be in list
+	if !filters.domains_allow.is_empty() {
+		let d = post.domain.to_lowercase();
+		if !filters.domains_allow.iter().any(|dom| {
+			let dom = dom.to_lowercase();
+			d == dom || d.ends_with(&format!(".{dom}"))
+		}) {
+			return false;
+		}
+	}
+	// domains_block: domain must not be in list
+	if !filters.domains_block.is_empty() {
+		let d = post.domain.to_lowercase();
+		if filters.domains_block.iter().any(|dom| {
+			let dom = dom.to_lowercase();
+			d == dom || d.ends_with(&format!(".{dom}"))
+		}) {
+			return false;
+		}
+	}
+	// media_types: post_type must be in allowed list
+	if !filters.media_types.is_empty() && !filters.media_types.iter().any(|t| t == "all") {
+		if !filters.media_types.iter().any(|t| t == &post.post_type) {
+			return false;
+		}
+	}
+	// nsfw
+	if filters.nsfw == "hide" && post.nsfw {
+		return false;
+	}
+	true
+}
+
+
 pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	let prefs = Preferences::new(&req);
 	let url = req.uri().to_string();
@@ -150,6 +200,8 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	};
 
 	// Build fetch path from rule sources
+	let density = rule.presentation.density.clone();
+	let rule_filters = rule.filters.clone();
 	let subs = match build_fetch_subs(&rule, &prefs) {
 		Ok(s) => s,
 		Err(msg) => return info(req, &msg).await,
@@ -231,6 +283,9 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		}
 
 		if !passes_mutes(&p.title, &p.domain, &p.community, &mutes) {
+			continue;
+		}
+		if !passes_channel_filters(&p, &rule_filters) {
 			continue;
 		}
 		let ctx = build_score_ctx(&p, now, false, false);
@@ -332,6 +387,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		unread_count,
 		saved_count,
 		after: after_cursor,
+		density,
 	};
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
