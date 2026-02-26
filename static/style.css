@@ -4011,14 +4011,21 @@ a {
     transition: color 0.15s ease, opacity 0.15s ease;
 }
 
-/* Post cards: lift + glow on hover, subtle press on active */
+/* Post cards: smooth whole-card lift + background bloom on hover.
+   Must match gradient structure (same stop count) for CSS to interpolate. */
 .post {
-    transition: background 0.18s ease, border-color 0.18s ease,
-                transform 0.18s ease, box-shadow 0.18s ease;
+    transition: background 0.2s ease, border-color 0.2s ease,
+                transform 0.18s ease, box-shadow 0.2s ease;
 }
 .post:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28),
-                0 1px 4px rgba(0, 0, 0, 0.18);
+    /* Matching 2-stop gradient so background transitions smoothly */
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--foreground) 88%, var(--post) 12%),
+        color-mix(in srgb, var(--foreground) 80%, var(--post) 20%)
+    );
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--outside) 62%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.26), 0 1px 5px rgba(0, 0, 0, 0.15);
     transform: translateY(-2px);
 }
 .post:active {
