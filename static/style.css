@@ -250,6 +250,13 @@ nav #links {
     white-space: nowrap;
 }
 
+/* In the flex nav, #searchbox must not use width:100% (that's only for the mobile grid row).
+   Give it a normal flex grow so it fills the space between logo and links. */
+nav #searchbox {
+    flex: 1 1 auto;
+    width: auto;
+}
+
 nav #links svg {
     display: none;
 }
@@ -3968,7 +3975,7 @@ a.feeds_manage { font-size: 0.9rem; margin-top: 0.5rem; display: inline-block; }
 }
 @media screen and (max-width: 800px) {
     .fixed_navbar .thread_toolbar {
-        top: 112px;
+        top: 96px;
     }
 }
 
@@ -3996,3 +4003,192 @@ details.panel[id="subreddit"][open] > summary::after {
 }
 
 /* ── end UX v1 ────────────────────────────────────────────── */
+
+/* ── UX v2: interactions, micro-animations, depth ─────────── */
+
+/* Smooth color transitions on links everywhere */
+a {
+    transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+/* Post cards: lift + glow on hover, subtle press on active */
+.post {
+    transition: background 0.18s ease, border-color 0.18s ease,
+                transform 0.18s ease, box-shadow 0.18s ease;
+}
+.post:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28),
+                0 1px 4px rgba(0, 0, 0, 0.18);
+    transform: translateY(-2px);
+}
+.post:active {
+    transform: translateY(0px);
+    box-shadow: var(--shadow);
+    transition-duration: 0.07s;
+}
+
+/* Post title: accent color pop on hover */
+.post_title a {
+    transition: color 0.15s ease;
+}
+.post:hover .post_title a {
+    color: var(--accent);
+}
+
+/* Post footer links: subtle hover lift */
+.post_footer a {
+    transition: color 0.15s ease, opacity 0.15s ease;
+}
+.post_footer a:hover {
+    color: var(--accent);
+    opacity: 1;
+}
+
+/* Sort / listing option tabs: smooth background slide */
+#sort_options > a,
+#listing_options > a {
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* Nav links: smooth hover highlight */
+nav #links > a,
+#user_menu > summary {
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+/* Search bar: glow on focus */
+#search:focus,
+.settings_search_wrap input:focus {
+    outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    outline-offset: 0;
+    transition: outline-color 0.15s ease;
+}
+
+/* Comment collapse: smooth hover on the author/summary line */
+.comment_data {
+    transition: background 0.12s ease;
+}
+.comment_data:hover {
+    background: color-mix(in srgb, var(--foreground) 55%, transparent);
+    border-radius: 4px;
+}
+
+/* Comment author and post metadata links */
+.comment_author,
+.post_subreddit,
+.post_author {
+    transition: color 0.13s ease;
+}
+.comment_author:hover,
+.post_subreddit:hover,
+.post_author:hover {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* Sidebar panel: subtle border glow on hover */
+.panel,
+#subreddit,
+#user,
+#sidebar {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.panel:hover,
+#subreddit:hover,
+#user:hover,
+#sidebar:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--outside) 70%);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+/* Subscribe / filter buttons: spring press */
+.subscribe,
+.unsubscribe,
+.filter,
+.unfilter {
+    transition: transform 0.1s ease, opacity 0.15s ease, background-color 0.15s ease;
+}
+.subscribe:hover,
+.unsubscribe:hover,
+.filter:hover,
+.unfilter:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+}
+.subscribe:active,
+.unsubscribe:active,
+.filter:active,
+.unfilter:active {
+    transform: translateY(1px);
+    opacity: 1;
+    transition-duration: 0.07s;
+}
+
+/* Thread toolbar buttons: consistent with post footer */
+.thread_ctrl_btn {
+    transition: background 0.15s ease, opacity 0.15s ease, transform 0.12s ease;
+}
+.thread_ctrl_btn:hover {
+    transform: translateY(-1px);
+}
+.thread_ctrl_btn:active {
+    transform: translateY(0px);
+    transition-duration: 0.07s;
+}
+
+/* Submit / sort button: subtle accent flash */
+button.submit,
+#sort_submit {
+    transition: color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+button.submit:hover > svg,
+#sort_submit:hover > svg {
+    stroke: var(--accent);
+}
+button.submit:active,
+#sort_submit:active {
+    transform: scale(0.96);
+    transition-duration: 0.07s;
+}
+
+/* Feed list links */
+#feed_list > a {
+    transition: background 0.15s ease, padding-left 0.15s ease;
+}
+#feed_list > a:hover {
+    padding-left: 24px;
+}
+
+/* Search subreddit rows */
+a.search_subreddit {
+    transition: background 0.15s ease, padding-left 0.12s ease;
+}
+a.search_subreddit:hover {
+    padding-left: 24px;
+    text-decoration: none;
+}
+
+/* Pagination links (Prev / Next) */
+main > * > footer > a {
+    transition: background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+main > * > footer > a:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+main > * > footer > a:active {
+    transform: translateY(0);
+    transition-duration: 0.07s;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+}
+
+/* ── end UX v2 ────────────────────────────────────────────── */
