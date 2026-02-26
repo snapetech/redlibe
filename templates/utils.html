@@ -62,6 +62,18 @@
 			<a href="/feeds" class="feeds_manage" title="Create or edit custom feeds">Manage feeds</a>
 			<p>QUICK</p>
 			<a href="/go" title="Jump to a subreddit by name">Go to r/...</a>
+			<p>LAYOUT</p>
+			<div id="layout_switcher">
+				<button class="layout_btn" data-layout="card" title="Card layout">Card</button>
+				<button class="layout_btn" data-layout="clean" title="Clean layout">Clean</button>
+				<button class="layout_btn" data-layout="compact" title="Compact layout">Compact</button>
+			</div>
+			<p>FILTER</p>
+			<div id="feed_filter">
+				<button class="filter_btn active" data-filter="all" title="Show all posts">All</button>
+				<button class="filter_btn" data-filter="new" title="Show only new posts">New</button>
+				<button class="filter_btn" data-filter="unseen" title="Show new and seen posts">Unseen</button>
+			</div>
 		</div>
 	</details>
 {%- endmacro %}

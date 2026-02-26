@@ -88,6 +88,12 @@
 				}, 120);
 			}
 		});
+		tile.addEventListener("mouseenter", function() {
+			applyThemePreview(tile.getAttribute("data-theme-name") || "system");
+		});
+		tile.addEventListener("mouseleave", function() {
+			applyThemePreview(select.value || "system");
+		});
 	});
 
 	select.addEventListener("change", syncThemeSelection);

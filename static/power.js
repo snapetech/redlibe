@@ -412,6 +412,111 @@
 		renderProfiles();
 	}
 
+	/* ── Layout Switcher ─────────────────────────────────────── */
+	var LS_LAYOUT = "redlib_layout_v1";
+	var LAYOUT_CLASSES = ["card", "clean", "compact", "wide"];
+
+	function applyLayout(layout) {
+		var body = document.body;
+		LAYOUT_CLASSES.forEach(function(cls) { body.classList.remove(cls); });
+		if (layout && layout !== "card") body.classList.add(layout);
+		// Persist preference
+		fetch("/settings/update/?layout=" + encodeURIComponent(layout) + "&redirect=%2F", {
+			method: "GET", credentials: "same-origin"
+		}).catch(function() {});
+		// Update active button state
+		document.querySelectorAll(".layout_btn").forEach(function(btn) {
+			var isActive = btn.getAttribute("data-layout") === layout ||
+				(layout === "card" && btn.getAttribute("data-layout") === "card");
+			btn.classList.toggle("active", isActive);
+		});
+	}
+
+	function attachLayoutSwitcher() {
+		// Determine current layout from body classes
+		var currentLayout = "card";
+		LAYOUT_CLASSES.forEach(function(cls) {
+			if (document.body.classList.contains(cls)) currentLayout = cls;
+		});
+		document.querySelectorAll(".layout_btn").forEach(function(btn) {
+			var layout = btn.getAttribute("data-layout");
+			if (layout === currentLayout || (currentLayout === "card" && layout === "card")) {
+				btn.classList.add("active");
+			}
+			btn.addEventListener("click", function() { applyLayout(layout); });
+		});
+	}
+
+	/* ── Post Read-Status Tracking ───────────────────────────── */
+	var LS_SEEN = "redlib_seen_v1";
+	var LS_READ = "redlib_read_v1";
+
+	function loadSet(key) {
+		try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); } catch(_) { return new Set(); }
+	}
+
+	function saveSet(key, set) {
+		var arr = Array.from(set);
+		if (arr.length > 3000) arr = arr.slice(-3000);
+		localStorage.setItem(key, JSON.stringify(arr));
+	}
+
+	function attachPostStatus() {
+		var posts = document.querySelectorAll(".post[data-post-id]");
+		if (!posts.length) return;
+		var seen = loadSet(LS_SEEN);
+		var read = loadSet(LS_READ);
+		var seenChanged = false;
+
+		posts.forEach(function(post) {
+			var id = post.getAttribute("data-post-id") || "";
+			if (!id) return;
+
+			if (read.has(id)) {
+				post.classList.add("post-read");
+			} else if (seen.has(id)) {
+				post.classList.add("post-seen");
+			} else {
+				post.classList.add("post-new");
+				seen.add(id);
+				seenChanged = true;
+			}
+
+			// Mark as read when the post title link is clicked
+			var titleLink = post.querySelector(".post_title a");
+			if (titleLink) {
+				titleLink.addEventListener("click", function() {
+					read.add(id);
+					post.classList.remove("post-new", "post-seen");
+					post.classList.add("post-read");
+					saveSet(LS_READ, read);
+				}, { once: true });
+			}
+		});
+
+		if (seenChanged) saveSet(LS_SEEN, seen);
+	}
+
+	/* ── Feed Filter Toggle ──────────────────────────────────── */
+	function attachFeedFilter() {
+		var btns = document.querySelectorAll("#feed_filter .filter_btn");
+		if (!btns.length) return;
+
+		btns.forEach(function(btn) {
+			btn.addEventListener("click", function() {
+				var filter = btn.getAttribute("data-filter");
+				btns.forEach(function(b) { b.classList.toggle("active", b === btn); });
+				var posts = document.querySelectorAll(".post");
+				posts.forEach(function(post) {
+					var visible = true;
+					if (filter === "new") visible = post.classList.contains("post-new");
+					else if (filter === "unseen") visible = post.classList.contains("post-new") || post.classList.contains("post-seen");
+					post.style.display = visible ? "" : "none";
+				});
+			});
+		});
+	}
+
 	function init() {
 		attachGlobalKeyboard();
 		attachLocalTools();
@@ -419,6 +524,9 @@
 		attachMediaFallbacks();
 		attachSettingsProfiles();
 		refreshPaletteCommands();
+		attachLayoutSwitcher();
+		attachPostStatus();
+		attachFeedFilter();
 	}
 
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
