@@ -720,8 +720,6 @@ aside {
         display: none;
     }
     nav #feed_list {
-        /* Force display regardless of <details> open/closed state */
-        display: flex !important;
         position: static;
         flex: 1;
         min-width: 100%;
@@ -733,11 +731,12 @@ aside {
         overflow-x: hidden;
         padding-bottom: 20px;
     }
-    /* Push main content and footer to the right of sidebar */
-    #main-content {
+    /* Push main content and footer to the right of sidebar.
+       Only when sidebar is present (JS adds .has-sidebar to body). */
+    body.has-sidebar #main-content {
         margin-left: 190px;
     }
-    footer {
+    body.has-sidebar footer {
         margin-left: 190px;
     }
 }
@@ -4293,6 +4292,98 @@ main > * > footer > a:active {
         opacity: 0.7;
         font-size: 12px;
     }
+}
+
+/* Subscription rows: sub link + × button side by side */
+.feed_sub_row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.feed_sub_row > a {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.feed_unsub_btn {
+    flex-shrink: 0;
+    padding: 0 6px;
+    font-size: 13px;
+    line-height: 22px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.13s ease, color 0.13s ease, background 0.13s ease;
+}
+.feed_sub_row:hover .feed_unsub_btn {
+    opacity: 0.7;
+}
+.feed_unsub_btn:hover {
+    opacity: 1 !important;
+    color: var(--nsfw);
+    background: color-mix(in srgb, var(--nsfw) 12%, transparent);
+}
+
+/* Inline add-feed panel */
+#add_feed_panel {
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+}
+#add_feed_panel > summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin: 3px 10px 3px 14px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 14%, var(--outside) 86%);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--accent);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 400;
+    transition: background 0.13s ease, border-color 0.13s ease;
+}
+#add_feed_panel > summary::marker,
+#add_feed_panel > summary::-webkit-details-marker {
+    display: none;
+}
+#add_feed_panel > summary:hover {
+    background: color-mix(in srgb, var(--accent) 22%, var(--outside) 78%);
+}
+#add_feed_form {
+    display: flex;
+    gap: 4px;
+    padding: 4px 10px 4px 14px;
+    align-items: center;
+}
+#add_feed_input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 7px;
+    border-radius: 5px;
+    border: 1px solid var(--highlighted);
+    background: var(--foreground);
+    color: var(--text);
+    font-size: 12px;
+}
+#add_feed_form button {
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: var(--accent);
+    color: var(--foreground);
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
 }
 
 /* Layout switcher buttons */

@@ -412,6 +412,79 @@
 		renderProfiles();
 	}
 
+	/* ── Sidebar Init ────────────────────────────────────────── */
+	function initSidebar() {
+		var feeds = document.getElementById("feeds");
+		if (!feeds) return;
+		var isDesktop = window.innerWidth > 800;
+		if (isDesktop) {
+			feeds.open = true;
+			document.body.classList.add("has-sidebar");
+		}
+	}
+
+	/* ── Inline Feed Management ──────────────────────────────── */
+	function attachInlineFeedManage() {
+		// Inline add form
+		var addForm = document.getElementById("add_feed_form");
+		var addInput = document.getElementById("add_feed_input");
+		if (addForm && addInput) {
+			addForm.addEventListener("submit", function(e) {
+				e.preventDefault();
+				var sub = addInput.value.trim().replace(/^\/?r\//, "");
+				if (!sub) return;
+				var redirect = window.location.pathname.replace(/^\//, "");
+				fetch("/r/" + encodeURIComponent(sub) + "/subscribe?redirect=" + encodeURIComponent(redirect), {
+					method: "POST",
+					credentials: "same-origin",
+					redirect: "manual"
+				}).then(function() {
+					// Inject the new sub row before the add panel
+					var addPanel = document.getElementById("add_feed_panel");
+					var feedList = document.getElementById("feed_list");
+					if (!addPanel || !feedList) return;
+					var row = document.createElement("span");
+					row.className = "feed_sub_row";
+					var link = document.createElement("a");
+					link.href = "/r/" + sub;
+					link.textContent = sub;
+					var unsub = document.createElement("button");
+					unsub.className = "feed_unsub_btn";
+					unsub.setAttribute("data-sub", sub);
+					unsub.title = "Unsubscribe";
+					unsub.textContent = "×";
+					row.appendChild(link);
+					row.appendChild(unsub);
+					feedList.insertBefore(row, addPanel);
+					addInput.value = "";
+					// Close the add panel
+					var panel = document.getElementById("add_feed_panel");
+					if (panel) panel.open = false;
+					attachUnsubBtn(unsub);
+				}).catch(function() {});
+			});
+		}
+
+		// Unsubscribe buttons
+		document.querySelectorAll(".feed_unsub_btn").forEach(attachUnsubBtn);
+	}
+
+	function attachUnsubBtn(btn) {
+		btn.addEventListener("click", function() {
+			var sub = btn.getAttribute("data-sub");
+			if (!sub) return;
+			var redirect = window.location.pathname.replace(/^\//, "");
+			fetch("/r/" + encodeURIComponent(sub) + "/unsubscribe?redirect=" + encodeURIComponent(redirect), {
+				method: "POST",
+				credentials: "same-origin",
+				redirect: "manual"
+			}).then(function() {
+				var row = btn.closest(".feed_sub_row");
+				if (row) row.remove();
+			}).catch(function() {});
+		});
+	}
+
 	/* ── Layout Switcher ─────────────────────────────────────── */
 	var LS_LAYOUT = "redlib_layout_v1";
 	var LAYOUT_CLASSES = ["card", "clean", "compact", "wide"];
@@ -524,6 +597,8 @@
 		attachMediaFallbacks();
 		attachSettingsProfiles();
 		refreshPaletteCommands();
+		initSidebar();
+		attachInlineFeedManage();
 		attachLayoutSwitcher();
 		attachPostStatus();
 		attachFeedFilter();

@@ -47,21 +47,26 @@
 				<a href="/r/popular">Popular</a>
 				<a href="/r/all">All</a>
 			{% endif %}
-			{% if prefs.subscriptions.len() > 0 %}
-				<p>SUBSCRIPTIONS</p>
-				{% for sub in prefs.subscriptions %}
+			<p>SUBSCRIPTIONS</p>
+			{% for sub in prefs.subscriptions %}
+				<span class="feed_sub_row">
 					<a href="/r/{{ sub }}" {% if sub == current %}class="selected"{% endif %}>{{ sub }}</a>
-				{% endfor %}
-			{% endif %}
+					<button class="feed_unsub_btn" data-sub="{{ sub }}" title="Unsubscribe">×</button>
+				</span>
+			{% endfor %}
+			<details id="add_feed_panel">
+				<summary id="add_feed_btn" title="Add a subreddit">+</summary>
+				<form id="add_feed_form">
+					<input id="add_feed_input" type="text" placeholder="subreddit name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+					<button type="submit">Add</button>
+				</form>
+			</details>
 			{% if prefs.custom_feeds_parsed().len() > 0 %}
 				<p>CUSTOM FEEDS</p>
 				{% for f in prefs.custom_feeds_parsed() %}
 					<a href="{{ f.link }}" {% if current == f.subreddits %}class="selected"{% endif %}>{{ f.name }}</a>
 				{% endfor %}
 			{% endif %}
-			<a href="/feeds" class="feeds_manage" title="Create or edit custom feeds">Manage feeds</a>
-			<p>QUICK</p>
-			<a href="/go" title="Jump to a subreddit by name">Go to r/...</a>
 			<p>LAYOUT</p>
 			<div id="layout_switcher">
 				<button class="layout_btn" data-layout="card" title="Card layout">Card</button>
@@ -74,6 +79,8 @@
 				<button class="filter_btn" data-filter="new" title="Show only new posts">New</button>
 				<button class="filter_btn" data-filter="unseen" title="Show new and seen posts">Unseen</button>
 			</div>
+			<p>QUICK</p>
+			<a href="/go" title="Jump to a subreddit by name">Go to r/…</a>
 		</div>
 	</details>
 {%- endmacro %}
