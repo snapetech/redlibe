@@ -96,12 +96,14 @@
 		</nav>
 		
 		<!-- MAIN CONTENT -->
+		<div id="main-content" tabindex="-1">
 		{% block body %}
-		<main id="main-content" tabindex="-1">
+		<main>
 			{% block content %}
 			{% endblock %}
 		</main>
 		{% endblock %}
+		</div>
 
 		<!-- FOOTER -->
 		{% block footer %}
