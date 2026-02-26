@@ -130,7 +130,7 @@
 			'<div class="power_palette_header">' +
 			'<input id="power_palette_input" type="search" placeholder="Command palette (Ctrl/Cmd+K)" autocomplete="off">' +
 			'</div>' +
-			'<div class="power_palette_help">Feed: j/k move, o open, r read, s save, a archive | Comments: j/k, [ collapse, ] expand, Shift+C/E | Ctrl+K palette</div>' +
+			'<div class="power_palette_help">Feed: j/k move, o open, r read, s save, a archive | Comments: j/k, [ ] collapse/expand | g+r reader, g+c channels, g+h home | Ctrl+K palette</div>' +
 			'<ul id="power_palette_list" class="power_palette_list" role="listbox"></ul>' +
 			'</div>';
 		document.body.appendChild(palette);
@@ -221,15 +221,31 @@
 	}
 
 	function attachGlobalKeyboard() {
+		var gChord = false, gChordTimer = null;
 		document.addEventListener("keydown", function(e) {
 			var target = e.target;
 			var typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
 				e.preventDefault();
 				if (palette && !palette.hidden) closePalette(); else openPalette();
+				gChord = false;
 				return;
 			}
 			if (typing) return;
+			// g-chord navigation
+			if (gChord) {
+				gChord = false;
+				clearTimeout(gChordTimer);
+				if (e.key === "r") { e.preventDefault(); window.location.href = "/reader/my-subs"; }
+				else if (e.key === "c") { e.preventDefault(); window.location.href = "/channels"; }
+				else if (e.key === "h") { e.preventDefault(); window.location.href = "/"; }
+				return;
+			}
+			if (e.key === "g") {
+				gChord = true;
+				gChordTimer = setTimeout(function() { gChord = false; }, 1000);
+				return;
+			}
 			if (e.key === "?") {
 				e.preventDefault();
 				openPalette();

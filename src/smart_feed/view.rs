@@ -7,7 +7,7 @@ use super::presets::{preset, Lens};
 use super::rank::{build_score_ctx, now_ts, ScoreResult};
 use super::session::{ensure_sid, local_state_enabled};
 use crate::server::RequestExt;
-use crate::state::{PostCacheEntry, State, STATE};
+use crate::state::{ChannelRow, PostCacheEntry, State, STATE};
 use crate::utils::{info, Post, Preferences};
 use askama::Template;
 use hyper::{Body, Request, Response};
@@ -39,6 +39,7 @@ pub struct FeedItem {
 struct FeedTemplate {
 	channel_slug: String,
 	channel_title: String,
+	channels: Vec<ChannelRow>,
 	lens: String,
 	preset: String,
 	preset_title: String,
@@ -207,6 +208,17 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		(Vec::new(), HashMap::new(), HashMap::new(), HashSet::new(), None)
 	};
 
+	// Load channel list for quick-nav
+	let channels: Vec<ChannelRow> = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
+		if let State::Sqlite(store) = &*STATE {
+			store.list_channels(key).await.unwrap_or_default()
+		} else {
+			Vec::new()
+		}
+	} else {
+		Vec::new()
+	};
+
 	// Filter + gate + score
 	let filter = q.filter.as_deref().unwrap_or("all");
 	let mut scored: Vec<(FeedItem, f64)> = Vec::new();
@@ -306,6 +318,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	let body = FeedTemplate {
 		channel_slug,
 		channel_title,
+		channels,
 		lens: lens.as_str().into(),
 		preset: preset_obj.slug.into(),
 		preset_title: preset_obj.title.into(),
