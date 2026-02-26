@@ -4744,4 +4744,57 @@ main > * > footer > a:active {
 }
 .channel_move_btn:hover { opacity: 1; }
 
+/* Archived feed items */
+.feed_item_archived { opacity: 0.45; }
+.feed_item_archived:hover { opacity: 0.7; }
+
+/* Archive button */
+.feed_archive_btn { color: var(--text); opacity: 0.55; }
+.feed_archive_btn:hover { opacity: 1; }
+.feed_item_archived .feed_archive_btn { color: var(--accent); opacity: 0.7; }
+
+/* Mute scope dropdown panel */
+.feed_mute_details { display: inline; }
+.feed_mute_details > summary { list-style: none; cursor: pointer; font-size: 0.78rem; opacity: 0.55; padding: 2px 6px; border-radius: 4px; }
+.feed_mute_details > summary:hover { opacity: 1; background: var(--highlighted); }
+.feed_mute_details > summary::-webkit-details-marker { display: none; }
+.feed_mute_panel {
+	position: absolute;
+	z-index: 20;
+	background: var(--post);
+	border: 1px solid var(--highlighted);
+	border-radius: 8px;
+	padding: 0.6rem 0.75rem;
+	min-width: 200px;
+	box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.feed_mute_row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.feed_mute_label { font-size: 0.82rem; font-weight: 600; flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed_mute_scope_btn {
+	font-size: 0.72rem;
+	padding: 2px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--highlighted);
+	background: var(--background);
+	color: var(--text);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.feed_mute_scope_btn:hover { background: var(--highlighted); }
+
+/* Mute scope label in mutes list */
+.mutes_scope {
+	font-size: 0.7rem;
+	opacity: 0.6;
+	font-style: italic;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--highlighted);
+}
+
+/* ── end smart feed ───────────────────────────────────────── */
+
 /* ── end smart feed ───────────────────────────────────────── */

@@ -86,6 +86,10 @@ pub async fn action_unsave(mut req: Request<Body>) -> Result<Response<Body>, Str
 	Ok(redirect_back(&req))
 }
 
+fn valid_mute_scope(scope: &str) -> bool {
+	scope == "global" || scope.starts_with("channel:")
+}
+
 pub async fn action_mute_keyword(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	let mut res = Response::new(Body::empty());
 	let user_key = require_user_key(&req, &mut res).await?;
@@ -96,8 +100,10 @@ pub async fn action_mute_keyword(mut req: Request<Body>) -> Result<Response<Body
 	if pattern.is_empty() {
 		return error(req, "Missing pattern").await;
 	}
+	let scope = form.get("scope").map(|s| s.as_str()).unwrap_or("global");
+	let scope = if valid_mute_scope(scope) { scope } else { "global" };
 	if let State::Sqlite(store) = &*STATE {
-		store.add_mute(&user_key, "global", "keyword", &pattern).await?;
+		store.add_mute(&user_key, scope, "keyword", &pattern).await?;
 	}
 	Ok(redirect_back(&req))
 }
@@ -112,8 +118,10 @@ pub async fn action_mute_domain(mut req: Request<Body>) -> Result<Response<Body>
 	if pattern.is_empty() {
 		return error(req, "Missing pattern").await;
 	}
+	let scope = form.get("scope").map(|s| s.as_str()).unwrap_or("global");
+	let scope = if valid_mute_scope(scope) { scope } else { "global" };
 	if let State::Sqlite(store) = &*STATE {
-		store.add_mute(&user_key, "global", "domain", &pattern).await?;
+		store.add_mute(&user_key, scope, "domain", &pattern).await?;
 	}
 	Ok(redirect_back(&req))
 }
@@ -128,8 +136,42 @@ pub async fn action_mute_subreddit(mut req: Request<Body>) -> Result<Response<Bo
 	if pattern.is_empty() {
 		return error(req, "Missing pattern").await;
 	}
+	let scope = form.get("scope").map(|s| s.as_str()).unwrap_or("global");
+	let scope = if valid_mute_scope(scope) { scope } else { "global" };
 	if let State::Sqlite(store) = &*STATE {
-		store.add_mute(&user_key, "global", "subreddit", &pattern).await?;
+		store.add_mute(&user_key, scope, "subreddit", &pattern).await?;
+	}
+	Ok(redirect_back(&req))
+}
+
+pub async fn action_archive(mut req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut res = Response::new(Body::empty());
+	let user_key = require_user_key(&req, &mut res).await?;
+	let form = read_form(&mut req).await?;
+	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
+
+	let post_id = form.get("post_id").cloned().unwrap_or_default();
+	if post_id.is_empty() {
+		return error(req, "Missing post_id").await;
+	}
+	if let State::Sqlite(store) = &*STATE {
+		store.set_archived(&user_key, &post_id, true).await?;
+	}
+	Ok(redirect_back(&req))
+}
+
+pub async fn action_unarchive(mut req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut res = Response::new(Body::empty());
+	let user_key = require_user_key(&req, &mut res).await?;
+	let form = read_form(&mut req).await?;
+	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
+
+	let post_id = form.get("post_id").cloned().unwrap_or_default();
+	if post_id.is_empty() {
+		return error(req, "Missing post_id").await;
+	}
+	if let State::Sqlite(store) = &*STATE {
+		store.set_archived(&user_key, &post_id, false).await?;
 	}
 	Ok(redirect_back(&req))
 }

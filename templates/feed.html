@@ -36,6 +36,8 @@
      class="reader_filter_btn{% if filter == "unread" %} active{% endif %}">Unread{% if unread_count > 0 %} ({{ unread_count }}){% endif %}</a>
   <a href="?lens={{ lens }}&preset={{ preset }}&filter=saved"
      class="reader_filter_btn{% if filter == "saved" %} active{% endif %}">Saved{% if saved_count > 0 %} ({{ saved_count }}){% endif %}</a>
+  <a href="?lens={{ lens }}&preset={{ preset }}&filter=archived"
+     class="reader_filter_btn{% if filter == "archived" %} active{% endif %}">Archived</a>
   {% if csrf != "" %}
   <form action="/action/mark_all_read" method="POST" style="display:inline; margin-left:auto;">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -67,7 +69,7 @@
   </p>
 {% else %}
 {% for item in &items %}
-  <div class="feed_item{% if item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}"
+  <div class="feed_item{% if item.is_archived %} feed_item_archived{% elif item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}"
        data-feed-post-id="{{ item.post.id }}"
        data-feed-open-url="/action/open?post_id={{ item.post.id }}&url={{ item.post.permalink }}"
        tabindex="-1">
@@ -118,23 +120,54 @@
         <input type="hidden" name="post_id" value="{{ item.post.id }}">
         <button type="submit" class="feed_action_btn">{% if item.is_saved %}Unsave{% else %}Save{% endif %}</button>
       </form>
-      <form action="/action/mute_subreddit" method="POST">
+      <form action="{% if item.is_archived %}/action/unarchive{% else %}/action/archive{% endif %}" method="POST">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="pattern" value="{{ item.post.community }}">
-        <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute r/{{ item.post.community }}">Mute sub</button>
+        <input type="hidden" name="post_id" value="{{ item.post.id }}">
+        <button type="submit" class="feed_action_btn feed_archive_btn" title="Archive (hide from feed)">{% if item.is_archived %}Unarchive{% else %}Archive{% endif %}</button>
       </form>
-      {% if item.post.domain != "" && !item.post.domain.starts_with("self.") %}
-      <form action="/action/mute_domain" method="POST">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="pattern" value="{{ item.post.domain }}">
-        <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute {{ item.post.domain }}">Mute domain</button>
-      </form>
-      {% endif %}
-      <form action="/action/mute_keyword" method="POST" class="feed_mute_kw_form">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="text" name="pattern" class="feed_mute_kw_input" placeholder="Mute keyword…" maxlength="80">
-        <button type="submit" class="feed_action_btn feed_mute_btn">Mute kw</button>
-      </form>
+      <details class="feed_mute_details">
+        <summary class="feed_action_btn feed_mute_summary">Mute…</summary>
+        <div class="feed_mute_panel">
+          <div class="feed_mute_row">
+            <span class="feed_mute_label">r/{{ item.post.community }}</span>
+            <form action="/action/mute_subreddit" method="POST" style="display:inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="pattern" value="{{ item.post.community }}">
+              <input type="hidden" name="scope" value="global">
+              <button type="submit" class="feed_mute_scope_btn">Global</button>
+            </form>
+            <form action="/action/mute_subreddit" method="POST" style="display:inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="pattern" value="{{ item.post.community }}">
+              <input type="hidden" name="scope" value="channel:{{ channel_slug }}">
+              <button type="submit" class="feed_mute_scope_btn">This channel</button>
+            </form>
+          </div>
+          {% if item.post.domain != "" && !item.post.domain.starts_with("self.") %}
+          <div class="feed_mute_row">
+            <span class="feed_mute_label">{{ item.post.domain }}</span>
+            <form action="/action/mute_domain" method="POST" style="display:inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="pattern" value="{{ item.post.domain }}">
+              <input type="hidden" name="scope" value="global">
+              <button type="submit" class="feed_mute_scope_btn">Global</button>
+            </form>
+            <form action="/action/mute_domain" method="POST" style="display:inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="pattern" value="{{ item.post.domain }}">
+              <input type="hidden" name="scope" value="channel:{{ channel_slug }}">
+              <button type="submit" class="feed_mute_scope_btn">This channel</button>
+            </form>
+          </div>
+          {% endif %}
+          <form action="/action/mute_keyword" method="POST" class="feed_mute_kw_form" style="margin-top:0.3rem;">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="scope" value="global">
+            <input type="text" name="pattern" class="feed_mute_kw_input" placeholder="Keyword…" maxlength="80">
+            <button type="submit" class="feed_mute_scope_btn">Mute keyword</button>
+          </form>
+        </div>
+      </details>
     </div>
     {% endif %}
   </div>

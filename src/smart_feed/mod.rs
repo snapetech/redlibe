@@ -19,8 +19,8 @@ pub use mutes_ui::{action_export_mutes, action_import_mutes, action_unmute, mute
 pub use saved_view::saved_view;
 pub use stats_view::stats_view;
 pub use state::{
-	action_mark_all_read, action_mark_read, action_mark_unread, action_mute_domain, action_mute_keyword, action_mute_subreddit,
-	action_open, action_save, action_unsave, api_unread_count,
+	action_archive, action_mark_all_read, action_mark_read, action_mark_unread, action_mute_domain, action_mute_keyword,
+	action_mute_subreddit, action_open, action_save, action_unarchive, action_unsave, api_unread_count,
 };
 pub use view::view;
 

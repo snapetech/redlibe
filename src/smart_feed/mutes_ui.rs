@@ -25,7 +25,7 @@ pub async fn mutes_list(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let mutes = if let (Some(ref key), true) = (user_key, local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
-			store.list_mutes(key, "global").await.unwrap_or_default()
+			store.list_all_mutes(key).await.unwrap_or_default()
 		} else {
 			Vec::new()
 		}

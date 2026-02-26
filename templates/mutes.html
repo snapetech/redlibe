@@ -22,6 +22,9 @@
       <li class="mutes_item">
         <span class="mutes_type mutes_type_{{ m.rule_type }}">{{ m.rule_type }}</span>
         <span class="mutes_pattern">{{ m.pattern }}</span>
+        {% if m.scope != "global" %}
+          <span class="mutes_scope" title="Scoped to channel">{{ m.scope }}</span>
+        {% endif %}
         {% if csrf != "" %}
         <form action="/action/unmute" method="POST" class="mutes_delete_form">
           <input type="hidden" name="csrf" value="{{ csrf }}">

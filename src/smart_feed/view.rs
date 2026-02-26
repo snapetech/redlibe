@@ -12,7 +12,7 @@ use crate::utils::{info, Post, Preferences};
 use askama::Template;
 use hyper::{Body, Request, Response};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default, Deserialize)]
 struct FeedQuery {
@@ -28,6 +28,7 @@ pub struct FeedItem {
 	pub post: Post,
 	pub is_read: bool,
 	pub is_saved: bool,
+	pub is_archived: bool,
 	pub why: Vec<String>,
 	pub cluster_id: Option<String>,
 	pub cluster_size: usize,
@@ -187,26 +188,36 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	// Load local state (mutes, read/saved maps, previous visit timestamp)
 	let now = now_ts();
-	let (mutes, read_map, saved_map, prev_visit) = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
+	let (mutes, read_map, saved_map, archived_set, prev_visit) = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
-			let mutes = store.list_mutes(key, "global").await.unwrap_or_default();
+			let mut mutes = store.list_mutes(key, "global").await.unwrap_or_default();
+			let channel_scope = format!("channel:{}", channel_slug);
+			let mut channel_mutes = store.list_mutes(key, &channel_scope).await.unwrap_or_default();
+			mutes.append(&mut channel_mutes);
 			let ids: Vec<String> = posts.iter().map(|p| p.id.clone()).collect();
 			let read_map = store.get_read_map(key, &ids).await.unwrap_or_default();
 			let saved_map = store.get_saved_map(key, &ids).await.unwrap_or_default();
+			let archived_set = store.get_archived_set(key, &ids).await.unwrap_or_default();
 			let prev_visit = store.get_last_visit(key, &channel_slug).await.unwrap_or(None);
-			(mutes, read_map, saved_map, prev_visit)
+			(mutes, read_map, saved_map, archived_set, prev_visit)
 		} else {
-			(Vec::new(), HashMap::new(), HashMap::new(), None)
+			(Vec::new(), HashMap::new(), HashMap::new(), HashSet::new(), None)
 		}
 	} else {
-		(Vec::new(), HashMap::new(), HashMap::new(), None)
+		(Vec::new(), HashMap::new(), HashMap::new(), HashSet::new(), None)
 	};
 
 	// Filter + gate + score
+	let filter = q.filter.as_deref().unwrap_or("all");
 	let mut scored: Vec<(FeedItem, f64)> = Vec::new();
 	let mut new_count: usize = 0;
 
 	for p in posts {
+		// Skip archived posts unless explicitly viewing archived filter
+		if archived_set.contains(&p.id) && filter != "archived" {
+			continue;
+		}
+
 		if !passes_mutes(&p.title, &p.domain, &p.community, &mutes) {
 			continue;
 		}
@@ -228,6 +239,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 		let is_read = read_map.get(&p.id).copied().unwrap_or(false);
 		let is_saved = saved_map.get(&p.id).copied().unwrap_or(false);
+		let is_archived = archived_set.contains(&p.id);
 
 		// Digest: mark posts new since last visit
 		let is_new_since_visit = prev_visit.map(|ts| p.created_ts as i64 > ts).unwrap_or(false);
@@ -238,7 +250,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 			why.insert(0, "Unread".into());
 		}
 
-		scored.push((FeedItem { post: p, is_read, is_saved, why, cluster_id: None, cluster_size: 1 }, score));
+		scored.push((FeedItem { post: p, is_read, is_saved, is_archived, why, cluster_id: None, cluster_size: 1 }, score));
 	}
 
 	scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -269,13 +281,13 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	}
 
 	// Apply filter
-	let filter = q.filter.as_deref().unwrap_or("all");
 	let total_count = scored.len();
 	let unread_count = scored.iter().filter(|(fi, _)| !fi.is_read).count();
 	let saved_count = scored.iter().filter(|(fi, _)| fi.is_saved).count();
 	let scored: Vec<(FeedItem, f64)> = match filter {
 		"unread" => scored.into_iter().filter(|(fi, _)| !fi.is_read).collect(),
 		"saved" => scored.into_iter().filter(|(fi, _)| fi.is_saved).collect(),
+		"archived" => scored.into_iter().filter(|(fi, _)| fi.is_archived).collect(),
 		_ => scored,
 	};
 

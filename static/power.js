@@ -130,7 +130,7 @@
 			'<div class="power_palette_header">' +
 			'<input id="power_palette_input" type="search" placeholder="Command palette (Ctrl/Cmd+K)" autocomplete="off">' +
 			'</div>' +
-			'<div class="power_palette_help">Shortcuts: Ctrl/Cmd+K open, j/k navigate, o open, r read, s save (feed) | [ collapse, ] expand, Shift+C/E (comments)</div>' +
+			'<div class="power_palette_help">Feed: j/k move, o open, r read, s save, a archive | Comments: j/k, [ collapse, ] expand, Shift+C/E | Ctrl+K palette</div>' +
 			'<ul id="power_palette_list" class="power_palette_list" role="listbox"></ul>' +
 			'</div>';
 		document.body.appendChild(palette);
@@ -590,6 +590,24 @@
 		});
 	}
 
+	/* ── Feed Card Click-to-Open ─────────────────────────────── */
+	function attachFeedCardClick() {
+		var container = document.getElementById("feed_items");
+		if (!container) return;
+		container.addEventListener("click", function(e) {
+			// Ignore clicks on interactive elements
+			if (e.target.closest("a, button, input, textarea, select, label, form")) return;
+			var card = e.target.closest(".feed_item[data-feed-open-url]");
+			if (!card) return;
+			var url = card.getAttribute("data-feed-open-url");
+			if (url) window.location.href = url;
+		});
+		// Also set cursor on cards
+		container.querySelectorAll(".feed_item[data-feed-open-url]").forEach(function(el) {
+			el.style.cursor = "pointer";
+		});
+	}
+
 	/* ── Reader Feed Keyboard Nav ────────────────────────────── */
 	function attachFeedKeyNav() {
 		var container = document.getElementById("feed_items");
@@ -671,6 +689,18 @@
 				var endpoint = isSaved ? "/action/unsave" : "/action/save";
 				postAction(endpoint, postId);
 				item.classList.toggle("feed_item_saved", !isSaved);
+			} else if (e.key === "a") {
+				if (currentIdx < 0) return;
+				var item = items[currentIdx];
+				var postId = item.getAttribute("data-feed-post-id");
+				postAction("/action/archive", postId);
+				// Fade out and remove card
+				item.style.transition = "opacity 0.25s";
+				item.style.opacity = "0";
+				setTimeout(function() { item.remove(); }, 270);
+				// Move focus to next item
+				items.splice(currentIdx, 1);
+				if (items.length > 0) focusItem(Math.min(currentIdx, items.length - 1));
 			}
 		});
 	}
@@ -754,6 +784,7 @@
 		attachLayoutSwitcher();
 		attachPostStatus();
 		attachFeedFilter();
+		attachFeedCardClick();
 		attachFeedKeyNav();
 		attachScrollToRead();
 		attachReaderBadge();

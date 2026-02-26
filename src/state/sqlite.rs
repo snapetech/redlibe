@@ -9,6 +9,7 @@ use tokio::task::spawn_blocking;
 #[derive(Debug, Clone)]
 pub struct MuteRule {
 	pub id: i64,
+	pub scope: String,
 	pub rule_type: String,
 	pub pattern: String,
 }
@@ -94,11 +95,34 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			let mut stmt = conn
-				.prepare("SELECT id, rule_type, pattern FROM mute_rule WHERE user_key = ?1 AND scope = ?2 ORDER BY created_at DESC")
+				.prepare("SELECT id, scope, rule_type, pattern FROM mute_rule WHERE user_key = ?1 AND scope = ?2 ORDER BY created_at DESC")
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
 				.query_map(params![user_key, scope], |row| {
-					Ok(MuteRule { id: row.get(0)?, rule_type: row.get(1)?, pattern: row.get(2)? })
+					Ok(MuteRule { id: row.get(0)?, scope: row.get(1)?, rule_type: row.get(2)?, pattern: row.get(3)? })
+				})
+				.map_err(|e| e.to_string())?;
+			let mut out = Vec::new();
+			for r in rows {
+				out.push(r.map_err(|e| e.to_string())?);
+			}
+			Ok(out)
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn list_all_mutes(&self, user_key: &str) -> Result<Vec<MuteRule>, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			let mut stmt = conn
+				.prepare("SELECT id, scope, rule_type, pattern FROM mute_rule WHERE user_key = ?1 ORDER BY scope ASC, created_at DESC")
+				.map_err(|e| e.to_string())?;
+			let rows = stmt
+				.query_map(params![user_key], |row| {
+					Ok(MuteRule { id: row.get(0)?, scope: row.get(1)?, rule_type: row.get(2)?, pattern: row.get(3)? })
 				})
 				.map_err(|e| e.to_string())?;
 			let mut out = Vec::new();
@@ -229,6 +253,55 @@ impl SqliteStore {
 			}
 			tx.commit().map_err(|e| e.to_string())?;
 			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn set_archived(&self, user_key: &str, post_id: &str, archived: bool) -> Result<(), String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		let post_id = post_id.to_string();
+		let val = if archived { 1i64 } else { 0i64 };
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			conn.execute(
+				"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at, is_archived)
+                 VALUES(?1, ?2, strftime('%s','now'), strftime('%s','now'), 0, NULL, ?3)
+                 ON CONFLICT(user_key, post_id) DO UPDATE SET is_archived = excluded.is_archived, last_seen_at = excluded.last_seen_at",
+				params![user_key, post_id, val],
+			)
+			.map_err(|e| e.to_string())?;
+			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn get_archived_set(&self, user_key: &str, post_ids: &[String]) -> Result<std::collections::HashSet<String>, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		let ids = post_ids.to_vec();
+		spawn_blocking(move || {
+			let mut conn = pool.get().map_err(|e| e.to_string())?;
+			let mut out = std::collections::HashSet::new();
+			let tx = conn.transaction().map_err(|e| e.to_string())?;
+			{
+				let mut stmt = tx
+					.prepare("SELECT post_id FROM post_state WHERE user_key = ?1 AND post_id = ?2 AND is_archived = 1")
+					.map_err(|e| e.to_string())?;
+				for id in ids {
+					if let Some(pid) = stmt
+						.query_row(params![user_key, id], |row| row.get::<_, String>(0))
+						.optional()
+						.map_err(|e| e.to_string())?
+					{
+						out.insert(pid);
+					}
+				}
+			}
+			tx.commit().map_err(|e| e.to_string())?;
+			Ok(out)
 		})
 		.await
 		.map_err(|e| e.to_string())?
@@ -644,7 +717,7 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 		.query_row("PRAGMA user_version", [], |row| row.get(0))
 		.map_err(|e| e.to_string())?;
 
-	if user_version >= 4 {
+	if user_version >= 5 {
 		return Ok(());
 	}
 
@@ -746,6 +819,19 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 			BEGIN;
 			ALTER TABLE channel ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
 			PRAGMA user_version = 4;
+			COMMIT;
+			"#,
+		)
+		.map_err(|e| e.to_string())?;
+	}
+
+	// V5: is_archived column for post_state (hide-from-feed without marking read)
+	if user_version < 5 {
+		conn.execute_batch(
+			r#"
+			BEGIN;
+			ALTER TABLE post_state ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
+			PRAGMA user_version = 5;
 			COMMIT;
 			"#,
 		)
