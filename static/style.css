@@ -4598,4 +4598,42 @@ main > * > footer > a:active {
 .cluster_nav { font-size: 0.85rem; margin-bottom: 0.75rem; }
 .cluster_count { opacity: 0.6; font-size: 0.85rem; font-weight: normal; }
 
+/* Digest / new-since-last-visit badge */
+.reader_new_badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(64, 128, 255, 0.16);
+    color: rgba(64, 128, 255, 0.9);
+    border-radius: 10px;
+    padding: 1px 7px;
+    border: 1px solid rgba(64, 128, 255, 0.22);
+    letter-spacing: 0.01em;
+}
+.feed_why_tag.feed_why_new {
+    background: rgba(64, 128, 255, 0.15);
+    color: rgba(64, 128, 255, 0.9);
+}
+
+/* Mutes page */
+#mutes_page { max-width: 640px; padding: 1rem; }
+.mutes_header h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+.mutes_intro { font-size: 0.9rem; opacity: 0.65; margin-bottom: 1.25rem; }
+.mutes_list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 1.5rem; }
+.mutes_item { display: flex; align-items: center; gap: 0.6rem; background: var(--post); border-radius: 6px; padding: 0.4rem 0.7rem; }
+.mutes_type { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 3px; padding: 1px 5px; min-width: 60px; text-align: center; }
+.mutes_type_keyword { background: rgba(255, 160, 64, 0.18); color: rgba(255, 160, 64, 0.9); }
+.mutes_type_domain  { background: rgba(64, 200, 128, 0.18); color: rgba(64, 200, 128, 0.9); }
+.mutes_type_subreddit { background: rgba(200, 64, 200, 0.18); color: rgba(200, 64, 200, 0.9); }
+.mutes_pattern { flex: 1; font-size: 0.88rem; }
+.mutes_delete_form { display: inline; }
+.mutes_delete_btn { background: none; border: none; color: var(--text); opacity: 0.35; cursor: pointer; font-size: 0.85rem; padding: 2px 5px; }
+.mutes_delete_btn:hover { opacity: 1; color: #e05; }
+.mutes_empty { font-size: 0.9rem; opacity: 0.65; margin-bottom: 1.5rem; }
+.mutes_add_section h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+.mutes_add_form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.mutes_back { font-size: 0.85rem; opacity: 0.7; }
+
+/* Saved posts page */
+.feed_saved_label { font-size: 0.75rem; opacity: 0.55; font-style: italic; }
+
 /* ── end smart feed ───────────────────────────────────────── */

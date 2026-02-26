@@ -7,13 +7,12 @@ use super::presets::{preset, Lens};
 use super::rank::{build_score_ctx, now_ts, ScoreResult};
 use super::session::{ensure_sid, local_state_enabled};
 use crate::server::RequestExt;
+use crate::state::{PostCacheEntry, State, STATE};
 use crate::utils::{info, Post, Preferences};
 use askama::Template;
 use hyper::{Body, Request, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
-
-use crate::state::{State, STATE};
 
 #[derive(Debug, Default, Deserialize)]
 struct FeedQuery {
@@ -44,6 +43,7 @@ struct FeedTemplate {
 	url: String,
 	items: Vec<FeedItem>,
 	csrf: String,
+	new_count: usize,
 }
 
 /// Build the subreddit join string for a channel rule.
@@ -153,24 +153,46 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let (posts, _after) = Post::fetch(&path, false).await?;
 
-	// Load local state
-	let (mutes, read_map, saved_map) = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
+	// Cache post metadata (for saved posts view) — fire and forget
+	if local_state_enabled() {
+		if let State::Sqlite(store) = &*STATE {
+			let entries: Vec<PostCacheEntry> = posts
+				.iter()
+				.map(|p| PostCacheEntry {
+					post_id: p.id.clone(),
+					title: p.title.clone(),
+					community: p.community.clone(),
+					domain: p.domain.clone(),
+					permalink: p.permalink.clone(),
+					score: p.score.1.parse::<i64>().unwrap_or(0),
+					comments: p.comments.1.parse::<i64>().unwrap_or(0),
+					created_utc: p.created_ts as i64,
+				})
+				.collect();
+			let _ = store.cache_posts(entries).await;
+		}
+	}
+
+	// Load local state (mutes, read/saved maps, previous visit timestamp)
+	let now = now_ts();
+	let (mutes, read_map, saved_map, prev_visit) = if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
 			let mutes = store.list_mutes(key, "global").await.unwrap_or_default();
 			let ids: Vec<String> = posts.iter().map(|p| p.id.clone()).collect();
 			let read_map = store.get_read_map(key, &ids).await.unwrap_or_default();
 			let saved_map = store.get_saved_map(key, &ids).await.unwrap_or_default();
-			(mutes, read_map, saved_map)
+			let prev_visit = store.get_last_visit(key, &channel_slug).await.unwrap_or(None);
+			(mutes, read_map, saved_map, prev_visit)
 		} else {
-			(Vec::new(), HashMap::new(), HashMap::new())
+			(Vec::new(), HashMap::new(), HashMap::new(), None)
 		}
 	} else {
-		(Vec::new(), HashMap::new(), HashMap::new())
+		(Vec::new(), HashMap::new(), HashMap::new(), None)
 	};
 
 	// Filter + gate + score
-	let now = now_ts();
 	let mut scored: Vec<(FeedItem, f64)> = Vec::new();
+	let mut new_count: usize = 0;
 
 	for p in posts {
 		if !passes_mutes(&p.title, &p.domain, &p.community, &mutes) {
@@ -194,7 +216,13 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 		let is_read = read_map.get(&p.id).copied().unwrap_or(false);
 		let is_saved = saved_map.get(&p.id).copied().unwrap_or(false);
-		if local_state_enabled() && !is_read {
+
+		// Digest: mark posts new since last visit
+		let is_new_since_visit = prev_visit.map(|ts| p.created_ts as i64 > ts).unwrap_or(false);
+		if local_state_enabled() && is_new_since_visit {
+			why.insert(0, "New".into());
+			new_count += 1;
+		} else if local_state_enabled() && !is_read {
 			why.insert(0, "Unread".into());
 		}
 
@@ -230,11 +258,12 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let items: Vec<FeedItem> = scored.into_iter().map(|(fi, _)| fi).collect();
 
-	// Batch "seen" update
+	// Batch "seen" update + update last visit timestamp
 	if let (Some(ref key), true) = (user_key.clone(), local_state_enabled()) {
 		if let State::Sqlite(store) = &*STATE {
 			let ids: Vec<String> = items.iter().map(|i| i.post.id.clone()).collect();
 			let _ = store.upsert_seen(key, &ids, now).await;
+			let _ = store.update_last_visit(key, &channel_slug, now).await;
 		}
 	}
 
@@ -249,6 +278,7 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		url,
 		items,
 		csrf: csrf_tok,
+		new_count,
 	};
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());

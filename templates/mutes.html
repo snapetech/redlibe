@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Mute Rules{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="mutes_page">
+  <div class="mutes_header">
+    <h1>Mute Rules</h1>
+    <p class="mutes_intro">Posts matching these rules are hidden from your reader feed.</p>
+  </div>
+
+  {% if mutes.is_empty() %}
+    <p class="mutes_empty">No mute rules yet. Use the "Mute sub" / "Mute domain" buttons in the feed, or add a keyword mute below.</p>
+  {% else %}
+    <ul class="mutes_list">
+      {% for m in &mutes %}
+      <li class="mutes_item">
+        <span class="mutes_type mutes_type_{{ m.rule_type }}">{{ m.rule_type }}</span>
+        <span class="mutes_pattern">{{ m.pattern }}</span>
+        {% if csrf != "" %}
+        <form action="/action/unmute" method="POST" class="mutes_delete_form">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="mute_id" value="{{ m.id }}">
+          <input type="hidden" name="back" value="/mutes">
+          <button type="submit" class="mutes_delete_btn" title="Remove this mute rule">✕</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if csrf != "" %}
+  <div class="mutes_add_section">
+    <h2>Add keyword mute</h2>
+    <form action="/action/mute_keyword" method="POST" class="mutes_add_form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="text" name="pattern" class="form_input" placeholder="keyword to hide" maxlength="200" required>
+      <button type="submit" class="form_submit">Add</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="mutes_back">
+    <a href="/reader/my-subs">← Back to feed</a>
+  </div>
+</div>
+{% endblock %}

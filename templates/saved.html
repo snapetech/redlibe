@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Saved Posts{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="reader_header">
+  <strong>Saved Posts</strong>
+  <div class="reader_lens_bar">
+    <a href="/reader/my-subs">Feed</a>
+    <span class="reader_lens_sep">·</span>
+    <a href="/mutes" class="reader_channels_link">Mutes</a>
+    <span class="reader_lens_sep">·</span>
+    <a href="/channels" class="reader_channels_link">Channels</a>
+  </div>
+</div>
+
+<div id="feed_items">
+{% if items.is_empty() %}
+  <p style="padding: 1rem; opacity: 0.65;">No saved posts yet. Use the "Save" button in the feed to bookmark posts here.</p>
+{% else %}
+  {% for item in &items %}
+  <div class="feed_item feed_item_saved">
+    <div class="feed_item_title">
+      <a href="{{ item.permalink }}">{{ item.title }}</a>
+    </div>
+    <div class="feed_item_meta">
+      <span class="feed_sub">r/{{ item.community }}</span>
+      {% if item.domain != "" && !item.domain.starts_with("self.") %}
+        <span class="feed_domain">{{ item.domain }}</span>
+      {% endif %}
+      <span class="feed_time">{{ item.rel_time }}</span>
+      <span>{{ item.score }} pts</span>
+      <span class="feed_comments">{{ item.comments }} comments</span>
+      <span class="feed_saved_label">saved {{ item.saved_at_display }} ago</span>
+    </div>
+    {% if csrf != "" %}
+    <div class="feed_actions">
+      <form action="/action/unsave" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="post_id" value="{{ item.post_id }}">
+        <button type="submit" class="feed_action_btn">Unsave</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endif %}
+</div>
+{% endblock %}

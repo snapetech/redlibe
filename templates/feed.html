@@ -9,14 +9,23 @@
 
 {% block body %}
 <div id="reader_header">
-  <strong>{{ channel_title }}</strong>
-  <span class="reader_meta"> · {{ preset_title }}</span>
+  <div style="display:flex; align-items:baseline; gap:0.5rem; flex-wrap:wrap;">
+    <strong>{{ channel_title }}</strong>
+    <span class="reader_meta">{{ preset_title }}</span>
+    {% if new_count > 0 %}
+      <span class="reader_new_badge">{{ new_count }} new</span>
+    {% endif %}
+  </div>
   <div class="reader_lens_bar">
     <a href="/reader/{{ channel_slug }}?lens=reader&preset=digest15"{% if lens == "reader" %} class="active"{% endif %}>Reader</a>
     <a href="/reader/{{ channel_slug }}?lens=research&preset=deepdives"{% if lens == "research" %} class="active"{% endif %}>Research</a>
     <a href="/reader/{{ channel_slug }}?lens=discussion&preset=live"{% if lens == "discussion" %} class="active"{% endif %}>Discussion</a>
     <span class="reader_lens_sep">·</span>
     <a href="/channels" class="reader_channels_link">Channels</a>
+    <span class="reader_lens_sep">·</span>
+    <a href="/reader/saved" class="reader_channels_link">Saved</a>
+    <span class="reader_lens_sep">·</span>
+    <a href="/mutes" class="reader_channels_link">Mutes</a>
   </div>
 </div>
 

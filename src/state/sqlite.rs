@@ -8,6 +8,7 @@ use tokio::task::spawn_blocking;
 
 #[derive(Debug, Clone)]
 pub struct MuteRule {
+	pub id: i64,
 	pub rule_type: String,
 	pub pattern: String,
 }
@@ -19,6 +20,31 @@ pub struct ChannelRow {
 	pub rule_json: String,
 	pub created_at: i64,
 	pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PostCacheEntry {
+	pub post_id: String,
+	pub title: String,
+	pub community: String,
+	pub domain: String,
+	pub permalink: String,
+	pub score: i64,
+	pub comments: i64,
+	pub created_utc: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SavedPostRow {
+	pub post_id: String,
+	pub title: String,
+	pub community: String,
+	pub domain: String,
+	pub permalink: String,
+	pub score: i64,
+	pub comments: i64,
+	pub created_utc: i64,
+	pub saved_at: i64,
 }
 
 #[derive(Clone)]
@@ -56,11 +82,11 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			let mut stmt = conn
-				.prepare("SELECT rule_type, pattern FROM mute_rule WHERE user_key = ?1 AND scope = ?2")
+				.prepare("SELECT id, rule_type, pattern FROM mute_rule WHERE user_key = ?1 AND scope = ?2 ORDER BY created_at DESC")
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
 				.query_map(params![user_key, scope], |row| {
-					Ok(MuteRule { rule_type: row.get(0)?, pattern: row.get(1)? })
+					Ok(MuteRule { id: row.get(0)?, rule_type: row.get(1)?, pattern: row.get(2)? })
 				})
 				.map_err(|e| e.to_string())?;
 			let mut out = Vec::new();
@@ -82,10 +108,23 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			conn.execute(
-				"INSERT INTO mute_rule(user_key, scope, rule_type, pattern, created_at) VALUES(?1, ?2, ?3, ?4, strftime('%s','now'))",
+				"INSERT OR IGNORE INTO mute_rule(user_key, scope, rule_type, pattern, created_at) VALUES(?1, ?2, ?3, ?4, strftime('%s','now'))",
 				params![user_key, scope, rule_type, pattern],
 			)
 			.map_err(|e| e.to_string())?;
+			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn delete_mute(&self, user_key: &str, mute_id: i64) -> Result<(), String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			conn.execute("DELETE FROM mute_rule WHERE id = ?1 AND user_key = ?2", params![mute_id, user_key])
+				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
 		.await
@@ -231,6 +270,119 @@ impl SqliteStore {
 		.map_err(|e| e.to_string())?
 	}
 
+	// ---- Post cache (for saved view) ----
+
+	pub async fn cache_posts(&self, entries: Vec<PostCacheEntry>) -> Result<(), String> {
+		if entries.is_empty() {
+			return Ok(());
+		}
+		let pool = self.pool.clone();
+		let now = now_ts();
+		spawn_blocking(move || {
+			let mut conn = pool.get().map_err(|e| e.to_string())?;
+			let tx = conn.transaction().map_err(|e| e.to_string())?;
+			{
+				let mut stmt = tx
+					.prepare(
+						"INSERT INTO post_cache(post_id, title, community, domain, permalink, score, comments, created_utc, cached_at)
+                         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                         ON CONFLICT(post_id) DO UPDATE SET
+                             score = excluded.score,
+                             comments = excluded.comments,
+                             cached_at = excluded.cached_at",
+					)
+					.map_err(|e| e.to_string())?;
+				for e in &entries {
+					stmt.execute(params![e.post_id, e.title, e.community, e.domain, e.permalink, e.score, e.comments, e.created_utc, now])
+						.map_err(|e| e.to_string())?;
+				}
+			}
+			tx.commit().map_err(|e| e.to_string())?;
+			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn get_saved_posts(&self, user_key: &str) -> Result<Vec<SavedPostRow>, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			let mut stmt = conn
+				.prepare(
+					"SELECT ps.post_id, pc.title, pc.community, pc.domain, pc.permalink, pc.score, pc.comments, pc.created_utc, ps.saved_at
+                     FROM post_state ps
+                     JOIN post_cache pc ON ps.post_id = pc.post_id
+                     WHERE ps.user_key = ?1 AND ps.saved_at IS NOT NULL
+                     ORDER BY ps.saved_at DESC",
+				)
+				.map_err(|e| e.to_string())?;
+			let rows = stmt
+				.query_map(params![user_key], |row| {
+					Ok(SavedPostRow {
+						post_id: row.get(0)?,
+						title: row.get(1)?,
+						community: row.get(2)?,
+						domain: row.get(3)?,
+						permalink: row.get(4)?,
+						score: row.get(5)?,
+						comments: row.get(6)?,
+						created_utc: row.get(7)?,
+						saved_at: row.get(8)?,
+					})
+				})
+				.map_err(|e| e.to_string())?;
+			let mut out = Vec::new();
+			for r in rows {
+				out.push(r.map_err(|e| e.to_string())?);
+			}
+			Ok(out)
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	// ---- Channel visits (digest since last visit) ----
+
+	pub async fn get_last_visit(&self, user_key: &str, channel_slug: &str) -> Result<Option<i64>, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		let channel_slug = channel_slug.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			conn
+				.query_row(
+					"SELECT last_visited_at FROM channel_visit WHERE user_key = ?1 AND channel_slug = ?2",
+					params![user_key, channel_slug],
+					|row| row.get::<_, i64>(0),
+				)
+				.optional()
+				.map_err(|e| e.to_string())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
+	pub async fn update_last_visit(&self, user_key: &str, channel_slug: &str, now: i64) -> Result<(), String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		let channel_slug = channel_slug.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			conn.execute(
+				"INSERT INTO channel_visit(user_key, channel_slug, last_visited_at)
+                 VALUES(?1, ?2, ?3)
+                 ON CONFLICT(user_key, channel_slug) DO UPDATE SET last_visited_at = excluded.last_visited_at",
+				params![user_key, channel_slug, now],
+			)
+			.map_err(|e| e.to_string())?;
+			Ok(())
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
 	// ---- Channels ----
 
 	pub async fn list_channels(&self, user_key: &str) -> Result<Vec<ChannelRow>, String> {
@@ -301,7 +453,6 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let mut conn = pool.get().map_err(|e| e.to_string())?;
 			let tx = conn.transaction().map_err(|e| e.to_string())?;
-			// Ensure user session exists for FK
 			tx.execute(
 				"INSERT OR IGNORE INTO user_session(user_key, created_at, last_seen_at) VALUES(?1, ?2, ?2)",
 				params![user_key, now],
@@ -341,7 +492,7 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 		.query_row("PRAGMA user_version", [], |row| row.get(0))
 		.map_err(|e| e.to_string())?;
 
-	if user_version >= 2 {
+	if user_version >= 3 {
 		return Ok(());
 	}
 
@@ -384,22 +535,53 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 	}
 
 	// V2: channels table
+	if user_version < 2 {
+		conn
+			.execute_batch(
+				r#"
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS channel (
+                user_key TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                title TEXT NOT NULL,
+                rule_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(user_key, slug),
+                FOREIGN KEY(user_key) REFERENCES user_session(user_key) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_channel_user ON channel(user_key);
+            COMMIT;
+            "#,
+			)
+			.map_err(|e| e.to_string())?;
+	}
+
+	// V3: post_cache, channel_visit, unique mute index
 	conn
 		.execute_batch(
 			r#"
         BEGIN;
-        CREATE TABLE IF NOT EXISTS channel (
-            user_key TEXT NOT NULL,
-            slug TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS post_cache (
+            post_id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
-            rule_json TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            PRIMARY KEY(user_key, slug),
+            community TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            permalink TEXT NOT NULL,
+            score INTEGER NOT NULL DEFAULT 0,
+            comments INTEGER NOT NULL DEFAULT 0,
+            created_utc INTEGER NOT NULL DEFAULT 0,
+            cached_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS channel_visit (
+            user_key TEXT NOT NULL,
+            channel_slug TEXT NOT NULL,
+            last_visited_at INTEGER NOT NULL,
+            PRIMARY KEY(user_key, channel_slug),
             FOREIGN KEY(user_key) REFERENCES user_session(user_key) ON DELETE CASCADE
         );
-        CREATE INDEX IF NOT EXISTS idx_channel_user ON channel(user_key);
-        PRAGMA user_version = 2;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mute_unique ON mute_rule(user_key, scope, rule_type, pattern);
+        PRAGMA user_version = 3;
         COMMIT;
         "#,
 		)
