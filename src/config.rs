@@ -177,6 +177,15 @@ pub struct Config {
 	#[serde(rename = "REDLIB_SECURE_COOKIES")]
 	pub(crate) secure_cookies: Option<String>,
 
+	// --- Smart feed / local state (redlib-extended) ---
+	/// Set to `on` to enable per-user SQLite local state (read/saved/mutes).
+	#[serde(rename = "REDLIB_ENABLE_LOCAL_STATE")]
+	pub(crate) enable_local_state: Option<String>,
+
+	/// Path to the SQLite database file for local state. Default: `redlib.sqlite`.
+	#[serde(rename = "REDLIB_DB_PATH")]
+	pub(crate) db_path: Option<String>,
+
 	// --- SSH browser-token import (redlib-extended) ---
 	/// SSH hostname (or alias) of the machine running the browser whose session
 	/// to import. Pre-fills the login page form. Default: `kspld0`.
@@ -267,6 +276,8 @@ impl Config {
 			raw_token: parse("REDLIB_RAW_TOKEN"),
 			browser_token: parse("REDLIB_BROWSER_TOKEN"),
 			secure_cookies: parse("REDLIB_SECURE_COOKIES"),
+			enable_local_state: parse("REDLIB_ENABLE_LOCAL_STATE"),
+			db_path: parse("REDLIB_DB_PATH"),
 			ssh_host: parse("REDLIB_SSH_HOST"),
 			ssh_user: parse("REDLIB_SSH_USER"),
 			ssh_key: parse("REDLIB_SSH_KEY"),
@@ -344,6 +355,8 @@ fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {
 		"REDLIB_RAW_TOKEN" => config.raw_token.clone(),
 		"REDLIB_BROWSER_TOKEN" => config.browser_token.clone(),
 		"REDLIB_SECURE_COOKIES" => config.secure_cookies.clone(),
+		"REDLIB_ENABLE_LOCAL_STATE" => config.enable_local_state.clone(),
+		"REDLIB_DB_PATH" => config.db_path.clone(),
 		"REDLIB_SSH_HOST" => config.ssh_host.clone(),
 		"REDLIB_SSH_USER" => config.ssh_user.clone(),
 		"REDLIB_SSH_KEY" => config.ssh_key.clone(),
