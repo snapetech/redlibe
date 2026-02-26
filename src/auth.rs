@@ -699,7 +699,7 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 		.get("ssh_user")
 		.map(|s| s.trim().to_string())
 		.unwrap_or_else(|| CONFIG.ssh_user.clone().unwrap_or_else(|| "keith".to_string()));
-	let browser = form.get("browser").map(|s| s.as_str()).unwrap_or("librewolf");
+	let browser = form.get("browser").map(|s| s.as_str()).unwrap_or("auto");
 
 	// Validate ssh_host and ssh_user to prevent injection (used as CLI args, not shell strings)
 	if !ssh_host.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
@@ -834,33 +834,37 @@ fn render_login_error(prefs: &Preferences, msg: &str) -> Result<Response<Body>, 
 	Ok(template(&page))
 }
 
+/// Returns `(find_dirs, version_bin)` for the remote shell script based on
+/// the browser choice. "auto" searches all known Firefox-based profile dirs.
+fn browser_script_parts(browser: &str) -> (&'static str, &'static str) {
+	match browser {
+		"firefox" => ("~/.mozilla/firefox", "firefox"),
+		"librewolf" => ("~/.librewolf", "librewolf"),
+		// auto: try LibreWolf then Firefox (most common Firefox-based browsers on Linux)
+		_ => ("~/.librewolf ~/.mozilla/firefox ~/.waterfox", "librewolf 2>/dev/null || firefox"),
+	}
+}
+
 /// Extract a Reddit bearer token and build a matching Firefox User-Agent by
 /// SSHing to the remote machine and querying its browser cookies.sqlite via sqlite3.
 ///
 /// Returns `(bearer_token, user_agent_string)`.
 async fn ssh_extract_token(host: &str, user: &str, key_path: &str, browser: &str) -> Result<(String, String), String> {
-	// Determine which profile dir to search based on browser choice
-	let find_path = match browser {
-		"firefox" => "~/.mozilla/firefox",
-		_ => "~/.librewolf", // default: librewolf
-	};
-
-	// Single SSH call: find the cookies.sqlite, query it, get version+arch
-	// All output is in key=value lines for easy parsing.
+	let (find_dirs, version_bin) = browser_script_parts(browser);
 	let remote_script = format!(
 		r#"set -e
-DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
-[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+DB=$(find {find_dirs} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_dirs}" && exit 1
 CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
 TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
 [ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
 echo "TOKEN=$TOKEN"
-VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+VERSION=$({version_bin} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 ARCH=$(uname -m)
 echo "VERSION=$VERSION"
 echo "ARCH=$ARCH""#,
-		find_path = find_path,
-		browser = browser,
+		find_dirs = find_dirs,
+		version_bin = version_bin,
 	);
 
 	let timeout_secs = ssh_timeout();
@@ -958,24 +962,21 @@ echo "ARCH=$ARCH""#,
 /// Same as ssh_extract_token but uses sshpass to supply the key passphrase (for encrypted private keys).
 /// Runs: sshpass -p passphrase ssh -i key_path -o BatchMode=no ...
 async fn ssh_extract_token_key_passphrase(host: &str, user: &str, key_path: &str, passphrase: &str, browser: &str) -> Result<(String, String), String> {
-	let find_path = match browser {
-		"firefox" => "~/.mozilla/firefox",
-		_ => "~/.librewolf",
-	};
+	let (find_dirs, version_bin) = browser_script_parts(browser);
 	let remote_script = format!(
 		r#"set -e
-DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
-[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+DB=$(find {find_dirs} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_dirs}" && exit 1
 CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
 TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
 [ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
 echo "TOKEN=$TOKEN"
-VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+VERSION=$({version_bin} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 ARCH=$(uname -m)
 echo "VERSION=$VERSION"
 echo "ARCH=$ARCH""#,
-		find_path = find_path,
-		browser = browser,
+		find_dirs = find_dirs,
+		version_bin = version_bin,
 	);
 
 	// BatchMode=no so ssh will prompt for key passphrase and sshpass can supply it
@@ -1068,24 +1069,21 @@ echo "ARCH=$ARCH""#,
 
 /// Same as ssh_extract_token but authenticates with password via sshpass.
 async fn ssh_extract_token_with_password(host: &str, user: &str, password: &str, browser: &str) -> Result<(String, String), String> {
-	let find_path = match browser {
-		"firefox" => "~/.mozilla/firefox",
-		_ => "~/.librewolf",
-	};
+	let (find_dirs, version_bin) = browser_script_parts(browser);
 	let remote_script = format!(
 		r#"set -e
-DB=$(find {find_path} -name 'cookies.sqlite' 2>/dev/null | head -1)
-[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_path}" && exit 1
+DB=$(find {find_dirs} -name 'cookies.sqlite' 2>/dev/null | head -1)
+[ -z "$DB" ] && echo "ERROR=no cookies.sqlite found in {find_dirs}" && exit 1
 CP=$(mktemp) && cp "$DB" "$CP" && trap "rm -f $CP" EXIT
 TOKEN=$(sqlite3 "$CP" 'SELECT value FROM moz_cookies WHERE host='\''.reddit.com'\'' AND name='\''token_v2'\'' ORDER BY lastAccessed DESC LIMIT 1' 2>/dev/null)
 [ -z "$TOKEN" ] && echo "ERROR=no token_v2 cookie found for .reddit.com" && exit 1
 echo "TOKEN=$TOKEN"
-VERSION=$({browser} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+VERSION=$({version_bin} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 ARCH=$(uname -m)
 echo "VERSION=$VERSION"
 echo "ARCH=$ARCH""#,
-		find_path = find_path,
-		browser = browser,
+		find_dirs = find_dirs,
+		version_bin = version_bin,
 	);
 
 	let timeout_secs = ssh_timeout();

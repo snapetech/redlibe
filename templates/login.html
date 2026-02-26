@@ -65,8 +65,8 @@
 		<section class="login_card" id="login_ssh_card">
 			<h2>Import session via SSH</h2>
 			<p class="login_card_desc">
-				Copy the active Reddit session from a Firefox or LibreWolf
-				install on a remote machine via SSH. No app registration needed.
+				Copy the active Reddit session from a Firefox-based browser
+				on a remote machine via SSH. No app registration needed.
 			</p>
 			<form method="POST" action="/login/ssh-import">
 				<div class="login_field">
@@ -96,12 +96,16 @@
 				<div class="login_field login_field_radio">
 					<span class="login_radio_label">Browser</span>
 					<label class="login_radio">
-						<input type="radio" name="browser" value="librewolf" checked>
-						LibreWolf
+						<input type="radio" name="browser" value="auto" checked>
+						Auto-detect
 					</label>
 					<label class="login_radio">
 						<input type="radio" name="browser" value="firefox">
 						Firefox
+					</label>
+					<label class="login_radio">
+						<input type="radio" name="browser" value="librewolf">
+						LibreWolf
 					</label>
 				</div>
 				<button type="submit" class="login_btn login_btn_ssh">
