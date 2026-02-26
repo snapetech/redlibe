@@ -788,6 +788,52 @@
 			.catch(function() {});
 	}
 
+	/* ── Client-side feed search ─────────────────────────────── */
+	function attachFeedSearch() {
+		var header = document.getElementById("reader_header");
+		var feedItems = document.getElementById("feed_items");
+		if (!header || !feedItems) return;
+
+		var wrap = document.createElement("div");
+		wrap.className = "feed_search_wrap";
+		var input = document.createElement("input");
+		input.type = "search";
+		input.placeholder = "Filter posts… (/)";
+		input.className = "feed_search_input";
+		input.setAttribute("aria-label", "Filter posts");
+		wrap.appendChild(input);
+		header.appendChild(wrap);
+
+		var items = feedItems.querySelectorAll(".feed_item[data-feed-post-id]");
+
+		function filterFeed() {
+			var q = input.value.trim().toLowerCase();
+			items.forEach(function(item) {
+				if (!q) { item.style.display = ""; return; }
+				var titleEl = item.querySelector(".feed_item_title");
+				var subEl = item.querySelector(".feed_sub");
+				var text = ((titleEl ? titleEl.textContent : "") + " " + (subEl ? subEl.textContent : "")).toLowerCase();
+				item.style.display = text.includes(q) ? "" : "none";
+			});
+		}
+
+		input.addEventListener("input", filterFeed);
+
+		// "/" key focuses the search input
+		document.addEventListener("keydown", function(e) {
+			if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+			if (e.key === "/") {
+				e.preventDefault();
+				input.focus();
+				input.select();
+			} else if (e.key === "Escape" && document.activeElement === input) {
+				input.value = "";
+				filterFeed();
+				input.blur();
+			}
+		});
+	}
+
 	/* ── Inbox unread badge for logged-in users ──────────────── */
 	function attachInboxBadge() {
 		var userMenu = document.getElementById("logged_in_user");
@@ -842,6 +888,7 @@
 		attachReaderBadge();
 		attachInboxBadge();
 		attachMediaTypeSync();
+		attachFeedSearch();
 	}
 
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

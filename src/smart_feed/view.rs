@@ -32,6 +32,7 @@ pub struct FeedItem {
 	pub why: Vec<String>,
 	pub cluster_id: Option<String>,
 	pub cluster_size: usize,
+	pub body_preview: String,
 }
 
 #[derive(Template)]
@@ -317,7 +318,12 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 			why.insert(0, "Unread".into());
 		}
 
-		scored.push((FeedItem { post: p, is_read, is_saved, is_archived, why, cluster_id: None, cluster_size: 1 }, score));
+		let body_preview = if p.post_type == "self" && !p.body.is_empty() {
+			crate::utils::plain_text_preview(&p.body, 160)
+		} else {
+			String::new()
+		};
+		scored.push((FeedItem { post: p, is_read, is_saved, is_archived, why, cluster_id: None, cluster_size: 1, body_preview }, score));
 	}
 
 	scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));

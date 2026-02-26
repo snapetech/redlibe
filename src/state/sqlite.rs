@@ -44,6 +44,9 @@ pub struct ReadingStats {
 	pub total_mutes: i64,
 	pub total_channels: i64,
 	pub top_communities: Vec<(String, i64)>,
+	pub today_read: i64,
+	pub week_read: i64,
+	pub month_read: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -684,7 +687,21 @@ impl SqliteStore {
 				.map_err(|e| e.to_string())?
 				.filter_map(|r| r.ok())
 				.collect();
-			Ok(ReadingStats { total_seen, total_read, total_saved, total_mutes, total_channels, top_communities })
+			// Time-bucketed read counts
+			let ts_now = now_ts();
+			let day_ago = ts_now - 86_400;
+			let week_ago = ts_now - 604_800;
+			let month_ago = ts_now - 2_592_000;
+			let today_read: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, day_ago], |r| r.get(0))
+				.unwrap_or(0);
+			let week_read: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, week_ago], |r| r.get(0))
+				.unwrap_or(0);
+			let month_read: i64 = conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, month_ago], |r| r.get(0))
+				.unwrap_or(0);
+			Ok(ReadingStats { total_seen, total_read, total_saved, total_mutes, total_channels, top_communities, today_read, week_read, month_read })
 		})
 		.await
 		.map_err(|e| e.to_string())?

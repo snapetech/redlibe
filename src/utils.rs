@@ -1695,6 +1695,34 @@ pub fn template(t: &impl Template) -> Response<Body> {
 		.unwrap_or_default()
 }
 
+/// Strip HTML tags from `html` and return up to `max_len` characters of plain text.
+/// Appends `…` if the source was truncated.
+pub fn plain_text_preview(html: &str, max_len: usize) -> String {
+	let mut out = String::with_capacity(max_len + 4);
+	let mut in_tag = false;
+	let mut in_entity = false;
+	for c in html.chars() {
+		match c {
+			'<' => { in_tag = true; }
+			'>' => { in_tag = false; }
+			'&' if !in_tag => { in_entity = true; out.push(' '); }
+			';' if in_entity => { in_entity = false; }
+			_ if in_tag || in_entity => {}
+			'\n' | '\r' => { if !out.ends_with(' ') { out.push(' '); } }
+			c => { out.push(c); }
+		}
+		if out.len() >= max_len { break; }
+	}
+	let trimmed = out.trim().to_string();
+	if trimmed.is_empty() {
+		String::new()
+	} else if html.len() > max_len + 10 {
+		format!("{trimmed}…")
+	} else {
+		trimmed
+	}
+}
+
 pub fn redirect(path: &str) -> Response<Body> {
 	// HTML-escape the path for safe embedding in the response body.
 	// The Location header uses the raw path; only the body text is escaped.

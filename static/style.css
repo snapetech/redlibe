@@ -4855,4 +4855,32 @@ main > * > footer > a:active {
 /* Channel filter fieldset */
 .form_check_group { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.3rem; }
 
+/* Self-post body preview */
+.feed_body_preview {
+	font-size: 0.82rem;
+	opacity: 0.7;
+	line-height: 1.45;
+	margin-top: 0.25rem;
+	max-height: 3.5em;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+/* Client-side feed search */
+.feed_search_wrap { margin-top: 0.5rem; }
+.feed_search_input {
+	width: 100%;
+	max-width: 320px;
+	font-size: 0.82rem;
+	padding: 4px 10px;
+	border: 1px solid var(--highlighted);
+	border-radius: 6px;
+	background: var(--background);
+	color: var(--text);
+	outline: none;
+}
+.feed_search_input:focus { border-color: var(--accent); }
+
 /* ── end smart feed ───────────────────────────────────────── */

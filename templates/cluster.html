@@ -21,16 +21,24 @@
   <div id="feed_items">
     {% for post in &posts %}
     <div class="feed_item">
-      <div class="feed_item_title">
-        <a href="{{ post.permalink }}">{{ post.title }}</a>
+      {% if post.thumbnail.url != "" && post.post_type != "self" %}
+      <div class="feed_thumb">
+        <img src="{{ post.thumbnail.url }}" alt="" loading="lazy" class="feed_thumb_img">
       </div>
-      <div class="feed_item_meta">
-        <span class="feed_sub">r/{{ post.community }}</span>
-        {% if post.domain != "" && !post.domain.starts_with("self.") %}
-          <span class="feed_domain">{{ post.domain }}</span>
-        {% endif %}
-        <span class="feed_time">{{ post.rel_time }}</span>
-        <span class="feed_comments">{{ post.comments.0 }} comments</span>
+      {% endif %}
+      <div class="feed_item_body">
+        <div class="feed_item_title">
+          <a href="{{ post.permalink }}">{{ post.title }}</a>
+        </div>
+        <div class="feed_item_meta">
+          <span class="feed_sub">r/{{ post.community }}</span>
+          {% if post.domain != "" && !post.domain.starts_with("self.") %}
+            <span class="feed_domain">{{ post.domain }}</span>
+          {% endif %}
+          <span class="feed_score">{{ post.score.0 }}</span>
+          <span class="feed_time">{{ post.rel_time }}</span>
+          <span class="feed_comments">{{ post.comments.0 }} comments</span>
+        </div>
       </div>
     </div>
     {% endfor %}

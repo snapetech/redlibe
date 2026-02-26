@@ -114,6 +114,9 @@
       {% endfor %}
     </div>
     {% endif %}
+    {% if item.body_preview != "" %}
+    <div class="feed_body_preview">{{ item.body_preview }}</div>
+    {% endif %}
 
     {% if csrf != "" %}
     <div class="feed_actions">

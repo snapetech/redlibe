@@ -13,33 +13,54 @@
     <h1>Reading Stats</h1>
   </div>
 
-  <div class="stats_grid">
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_seen }}</div>
-      <div class="stats_card_label">Posts seen</div>
+  <div class="stats_section">
+    <h2>Reading activity</h2>
+    <div class="stats_grid">
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.today_read }}</div>
+        <div class="stats_card_label">Read today</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.week_read }}</div>
+        <div class="stats_card_label">This week</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.month_read }}</div>
+        <div class="stats_card_label">This month</div>
+      </div>
     </div>
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_read }}</div>
-      <div class="stats_card_label">Posts read</div>
+  </div>
+
+  <div class="stats_section">
+    <h2>All time</h2>
+    <div class="stats_grid">
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_seen }}</div>
+        <div class="stats_card_label">Posts seen</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_read }}</div>
+        <div class="stats_card_label">Posts read</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_saved }}</div>
+        <div class="stats_card_label">Saved</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_mutes }}</div>
+        <div class="stats_card_label">Mute rules</div>
+      </div>
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_channels }}</div>
+        <div class="stats_card_label">Channels</div>
+      </div>
+      {% if stats.total_seen > 0 %}
+      <div class="stats_card">
+        <div class="stats_card_value">{{ stats.total_read * 100 / stats.total_seen }}%</div>
+        <div class="stats_card_label">Read rate</div>
+      </div>
+      {% endif %}
     </div>
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_saved }}</div>
-      <div class="stats_card_label">Saved</div>
-    </div>
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_mutes }}</div>
-      <div class="stats_card_label">Mute rules</div>
-    </div>
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_channels }}</div>
-      <div class="stats_card_label">Channels</div>
-    </div>
-    {% if stats.total_seen > 0 %}
-    <div class="stats_card">
-      <div class="stats_card_value">{{ stats.total_read * 100 / stats.total_seen }}%</div>
-      <div class="stats_card_label">Read rate</div>
-    </div>
-    {% endif %}
   </div>
 
   {% if !stats.top_communities.is_empty() %}
