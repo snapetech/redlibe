@@ -47,13 +47,16 @@
 				<a href="/r/popular">Popular</a>
 				<a href="/r/all">All</a>
 			{% endif %}
-			<p>SUBSCRIPTIONS</p>
+			<p>SUBSCRIPTIONS{% if prefs.logged_in %}<form action="/action/sync_subscriptions" method="POST" style="display:inline;margin-left:auto;"><button type="submit" class="feed_sync_btn" title="Re-sync from Reddit">↻</button></form>{% endif %}</p>
 			{% for sub in prefs.subscriptions %}
 				<span class="feed_sub_row">
 					<a href="/r/{{ sub }}" {% if sub == current %}class="selected"{% endif %}>{{ sub }}</a>
 					<button class="feed_unsub_btn" data-sub="{{ sub }}" title="Unsubscribe">×</button>
 				</span>
 			{% endfor %}
+			{% if prefs.subscriptions.is_empty() && prefs.logged_in %}
+				<span class="feed_sync_hint">No subscriptions. Click ↻ to sync from Reddit.</span>
+			{% endif %}
 			<details id="add_feed_panel">
 				<summary id="add_feed_btn" title="Add a subreddit">+</summary>
 				<form id="add_feed_form">

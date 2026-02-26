@@ -470,6 +470,7 @@ async fn main() {
 	app.at("/action/archive").post(|r| smart_feed::action_archive(r).boxed());
 	app.at("/action/unarchive").post(|r| smart_feed::action_unarchive(r).boxed());
 	app.at("/action/open").get(|r| smart_feed::action_open(r).boxed());
+	app.at("/action/sync_subscriptions").post(|r| crate::auth::sync_subscriptions(r).boxed());
 
 	// Channel management + cluster view + mutes + saved
 	app.at("/channels").get(|r| smart_feed::channels_list(r).boxed()).post(|r| smart_feed::channels_create(r).boxed());

@@ -4883,4 +4883,31 @@ main > * > footer > a:active {
 }
 .feed_search_input:focus { border-color: var(--accent); }
 
+/* Subscription sync button in sidebar */
+#feed_list > p {
+	display: flex;
+	align-items: center;
+}
+.feed_sync_btn {
+	margin-left: auto;
+	padding: 0 4px;
+	font-size: 12px;
+	line-height: 16px;
+	background: transparent;
+	border: none;
+	color: var(--muted);
+	cursor: pointer;
+	border-radius: 3px;
+	opacity: 0.6;
+	transition: opacity 0.13s, color 0.13s;
+}
+.feed_sync_btn:hover { opacity: 1; color: var(--accent); }
+.feed_sync_hint {
+	display: block;
+	font-size: 11px;
+	color: var(--muted);
+	padding: 4px 14px 6px;
+	opacity: 0.7;
+}
+
 /* ── end smart feed ───────────────────────────────────────── */

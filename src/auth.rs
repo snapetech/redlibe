@@ -605,6 +605,7 @@ fn build_login_page<'a>(prefs: &Preferences, error: Option<&'a str>) -> LoginPag
 
 async fn complete_browser_import_login(bearer_token: String, user_agent: Option<String>) -> Result<Response<Body>, String> {
 	let username = fetch_username(&bearer_token).await.unwrap_or_else(|_| "unknown".to_string());
+	let reddit_subs = client::fetch_subscribed_subreddits_with_bearer(&bearer_token).await.unwrap_or_default();
 
 	if let Some(ua) = user_agent.filter(|s| !s.is_empty()) {
 		set_runtime_user_agent(ua);
@@ -618,7 +619,21 @@ async fn complete_browser_import_login(bearer_token: String, user_agent: Option<
 		csrf_token: Uuid::new_v4().to_string(),
 	};
 
-	add_session_to_vault(session)
+	let mut response = add_session_to_vault(session)?;
+
+	if !reddit_subs.is_empty() {
+		response.insert_cookie(
+			Cookie::build((subscriptions_cookie_name(), reddit_subs.join("+")))
+				.path("/")
+				.http_only(true)
+				.secure(secure_cookies())
+				.same_site(SameSite::Lax)
+				.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+				.into(),
+		);
+	}
+
+	Ok(response)
 }
 
 /// `POST /login/reddit` — generate a CSRF state token, then redirect to Reddit's
@@ -1390,4 +1405,38 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<(String, i64), 
 	let expires_at = OffsetDateTime::now_utc().unix_timestamp() + expires_in;
 
 	Ok((new_token, expires_at))
+}
+
+/// `POST /action/sync_subscriptions` — re-fetch the user's Reddit subscriptions
+/// from `/subreddits/mine/subscriber` and refresh the subscriptions cookie.
+pub async fn sync_subscriptions(req: Request<Body>) -> Result<Response<Body>, String> {
+	let auth = AuthContext::from_request(&req);
+	if !auth.is_authenticated() {
+		return Err("Not logged in".to_string());
+	}
+
+	let subs = client::fetch_subscribed_subreddits(&auth).await.unwrap_or_default();
+
+	let back = req
+		.headers()
+		.get("Referer")
+		.and_then(|v| v.to_str().ok())
+		.unwrap_or("/")
+		.to_string();
+
+	let mut response = crate::utils::redirect(&back);
+
+	if !subs.is_empty() {
+		response.insert_cookie(
+			Cookie::build((subscriptions_cookie_name(), subs.join("+")))
+				.path("/")
+				.http_only(true)
+				.secure(secure_cookies())
+				.same_site(SameSite::Lax)
+				.expires(OffsetDateTime::now_utc() + Duration::weeks(4))
+				.into(),
+		);
+	}
+
+	Ok(response)
 }
