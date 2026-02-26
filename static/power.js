@@ -430,6 +430,17 @@
 
 	/* ── Sidebar Init ────────────────────────────────────────── */
 	function initSidebar() {
+		// Always measure actual nav height and expose as CSS variable
+		var nav = document.querySelector('nav');
+		if (nav) {
+			var navH = Math.round(nav.getBoundingClientRect().height);
+			document.documentElement.style.setProperty('--nav-h', navH + 'px');
+			// Correct body padding-top for fixed navbar (CSS fallback may overshoot)
+			if (document.body.classList.contains('fixed_navbar')) {
+				document.body.style.paddingTop = navH + 'px';
+			}
+		}
+
 		var feeds = document.getElementById("feeds");
 		if (!feeds) return;
 		var isDesktop = window.innerWidth > 800;

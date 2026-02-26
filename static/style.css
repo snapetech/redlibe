@@ -168,12 +168,12 @@ input {
 }
 
 html.fixed_navbar {
-    scroll-padding-top: 76px;
+    scroll-padding-top: var(--nav-h, 50px);
 }
 
 @media screen and (max-width: 800px) {
     html.fixed_navbar {
-        scroll-padding-top: 112px;
+        scroll-padding-top: var(--nav-h, 96px);
     }
 }
 
@@ -190,7 +190,7 @@ body.card {
 
 body.fixed_navbar {
     min-height: calc(100vh - 90px);
-    padding-top: 76px;
+    padding-top: var(--nav-h, 50px);
 }
 
 nav {
@@ -690,9 +690,9 @@ aside {
     nav #feeds {
         position: fixed;
         left: 0;
-        top: 76px;
-        width: 190px;
-        height: calc(100vh - 76px);
+        top: var(--nav-h, 50px);
+        width: 160px;
+        height: calc(100vh - var(--nav-h, 50px));
         z-index: 11;
         background: var(--outside);
         border: none;
@@ -734,10 +734,10 @@ aside {
     /* Push main content and footer to the right of sidebar.
        Only when sidebar is present (JS adds .has-sidebar to body). */
     body.has-sidebar #main-content {
-        margin-left: 190px;
+        margin-left: 160px;
     }
     body.has-sidebar footer {
-        margin-left: 190px;
+        margin-left: 160px;
     }
 }
 
@@ -4030,7 +4030,7 @@ a.feeds_manage { font-size: 0.9rem; margin-top: 0.5rem; display: inline-block; }
 /* Stick toolbar below fixed navbar */
 .fixed_navbar .thread_toolbar {
     position: sticky;
-    top: 76px;
+    top: var(--nav-h, 50px);
     z-index: 1;
 }
 @media screen and (max-width: 800px) {
