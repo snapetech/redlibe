@@ -1,6 +1,6 @@
 use super::csrf;
-use super::session::require_user_key;
-use crate::utils::error;
+use super::session::{ensure_sid, local_state_enabled, require_user_key};
+use crate::utils::{error, redirect};
 use hyper::{Body, Request, Response};
 
 use crate::state::{State, STATE};
@@ -132,4 +132,42 @@ pub async fn action_mute_subreddit(mut req: Request<Body>) -> Result<Response<Bo
 		store.add_mute(&user_key, "global", "subreddit", &pattern).await?;
 	}
 	Ok(redirect_back(&req))
+}
+
+pub async fn action_mark_all_read(mut req: Request<Body>) -> Result<Response<Body>, String> {
+	let mut res = Response::new(Body::empty());
+	let user_key = require_user_key(&req, &mut res).await?;
+	let form = read_form(&mut req).await?;
+	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
+
+	if let State::Sqlite(store) = &*STATE {
+		store.mark_all_read(&user_key).await?;
+	}
+	Ok(redirect_back(&req))
+}
+
+/// GET /action/open?post_id=X&url=/r/sub/comments/...
+/// Marks the post read then redirects to the post URL.
+/// URL must be a relative path (starts with /) to prevent open redirect.
+pub async fn action_open(req: Request<Body>) -> Result<Response<Body>, String> {
+	let query: std::collections::HashMap<String, String> =
+		serde_urlencoded::from_str(req.uri().query().unwrap_or("")).unwrap_or_default();
+
+	let post_id = query.get("post_id").cloned().unwrap_or_default();
+	let dest = query.get("url").cloned().unwrap_or_else(|| "/".to_string());
+
+	// Only allow relative paths
+	let dest = if dest.starts_with('/') { dest } else { "/".to_string() };
+
+	// Mark read if local state enabled and user has a session
+	if local_state_enabled() && !post_id.is_empty() {
+		let mut fake_res = Response::new(Body::empty());
+		if let Some(user_key) = ensure_sid(&req, &mut fake_res) {
+			if let State::Sqlite(store) = &*STATE {
+				let _ = store.set_read(&user_key, &post_id, true).await;
+			}
+		}
+	}
+
+	Ok(redirect(&dest))
 }

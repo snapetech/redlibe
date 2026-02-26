@@ -20,6 +20,7 @@ struct FeedQuery {
 	preset: Option<String>,
 	clusters: Option<String>,
 	limit: Option<u32>,
+	filter: Option<String>,  // "all" | "unread" | "saved"
 }
 
 pub struct FeedItem {
@@ -44,6 +45,8 @@ struct FeedTemplate {
 	items: Vec<FeedItem>,
 	csrf: String,
 	new_count: usize,
+	filter: String,
+	total_count: usize,
 }
 
 /// Build the subreddit join string for a channel rule.
@@ -256,6 +259,15 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		}
 	}
 
+	// Apply filter
+	let filter = q.filter.as_deref().unwrap_or("all");
+	let total_count = scored.len();
+	let scored: Vec<(FeedItem, f64)> = match filter {
+		"unread" => scored.into_iter().filter(|(fi, _)| !fi.is_read).collect(),
+		"saved" => scored.into_iter().filter(|(fi, _)| fi.is_saved).collect(),
+		_ => scored,
+	};
+
 	let items: Vec<FeedItem> = scored.into_iter().map(|(fi, _)| fi).collect();
 
 	// Batch "seen" update + update last visit timestamp
@@ -279,6 +291,8 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		items,
 		csrf: csrf_tok,
 		new_count,
+		filter: filter.to_string(),
+		total_count,
 	};
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());

@@ -466,6 +466,8 @@ async fn main() {
 	app.at("/action/mute_domain").post(|r| smart_feed::action_mute_domain(r).boxed());
 	app.at("/action/mute_subreddit").post(|r| smart_feed::action_mute_subreddit(r).boxed());
 	app.at("/action/unmute").post(|r| smart_feed::action_unmute(r).boxed());
+	app.at("/action/mark_all_read").post(|r| smart_feed::action_mark_all_read(r).boxed());
+	app.at("/action/open").get(|r| smart_feed::action_open(r).boxed());
 
 	// Channel management + cluster view + mutes + saved
 	app.at("/channels").get(|r| smart_feed::channels_list(r).boxed()).post(|r| smart_feed::channels_create(r).boxed());

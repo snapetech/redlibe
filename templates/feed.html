@@ -29,6 +29,21 @@
   </div>
 </div>
 
+<div class="reader_filter_bar">
+  <a href="?lens={{ lens }}&preset={{ preset }}&filter=all"
+     class="reader_filter_btn{% if filter == "all" || filter == "" %} active{% endif %}">All ({{ total_count }})</a>
+  <a href="?lens={{ lens }}&preset={{ preset }}&filter=unread"
+     class="reader_filter_btn{% if filter == "unread" %} active{% endif %}">Unread</a>
+  <a href="?lens={{ lens }}&preset={{ preset }}&filter=saved"
+     class="reader_filter_btn{% if filter == "saved" %} active{% endif %}">Saved</a>
+  {% if csrf != "" %}
+  <form action="/action/mark_all_read" method="POST" style="display:inline; margin-left:auto;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="reader_mark_all_btn">Mark all read</button>
+  </form>
+  {% endif %}
+</div>
+
 {% if csrf != "" %}
 <details class="save_channel_drawer">
   <summary>+ Save as Channel</summary>
@@ -43,10 +58,22 @@
 {% endif %}
 
 <div id="feed_items">
-{% for item in items %}
+{% if items.is_empty() %}
+  <p style="padding: 1rem; opacity: 0.65;">
+    {% if filter == "unread" %}No unread posts.
+    {% elif filter == "saved" %}No saved posts in this feed. Use the Save button to bookmark posts.
+    {% else %}No posts found for this channel and preset.
+    {% endif %}
+  </p>
+{% else %}
+{% for item in &items %}
   <div class="feed_item{% if item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}">
     <div class="feed_item_title">
-      <a href="{{ item.post.permalink }}">{{ item.post.title }}</a>
+      {% if csrf != "" %}
+        <a href="/action/open?post_id={{ item.post.id }}&url={{ item.post.permalink }}">{{ item.post.title }}</a>
+      {% else %}
+        <a href="{{ item.post.permalink }}">{{ item.post.title }}</a>
+      {% endif %}
     </div>
     <div class="feed_item_meta">
       <span class="feed_sub">r/{{ item.post.community }}</span>
@@ -63,7 +90,7 @@
     {% if !item.why.is_empty() %}
     <div class="feed_why">
       {% for w in &item.why %}
-        <span class="feed_why_tag">{{ w }}</span>
+        <span class="feed_why_tag{% if w == "New" %} feed_why_new{% endif %}">{{ w }}</span>
       {% endfor %}
     </div>
     {% endif %}
@@ -104,5 +131,6 @@
     {% endif %}
   </div>
 {% endfor %}
+{% endif %}
 </div>
 {% endblock %}

@@ -222,6 +222,20 @@ impl SqliteStore {
 		.map_err(|e| e.to_string())?
 	}
 
+	pub async fn mark_all_read(&self, user_key: &str) -> Result<usize, String> {
+		let pool = self.pool.clone();
+		let user_key = user_key.to_string();
+		spawn_blocking(move || {
+			let conn = pool.get().map_err(|e| e.to_string())?;
+			let n = conn
+				.execute("UPDATE post_state SET is_read = 1 WHERE user_key = ?1 AND is_read = 0", params![user_key])
+				.map_err(|e| e.to_string())?;
+			Ok(n)
+		})
+		.await
+		.map_err(|e| e.to_string())?
+	}
+
 	pub async fn set_read(&self, user_key: &str, post_id: &str, is_read: bool) -> Result<(), String> {
 		let pool = self.pool.clone();
 		let user_key = user_key.to_string();

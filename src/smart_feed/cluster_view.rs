@@ -1,7 +1,6 @@
 use super::channel::ChannelRule;
 use super::cluster;
 use super::presets::{preset, Lens};
-use super::rank::now_ts;
 use super::session::ensure_sid;
 use super::view::build_fetch_subs;
 use crate::server::RequestExt;
