@@ -4388,4 +4388,45 @@ main > * > footer > a:active {
     opacity: 1;
 }
 
+/* Comment thread: more readable, slightly smaller than post card */
+/* Overall comment text is ~89% of body size for visual hierarchy */
+.comment_right {
+    font-size: 0.88rem;
+    padding: 6px 0 6px 5px;
+    line-height: 1.5;
+}
+.comment_body {
+    line-height: 1.58;
+    padding: 3px 5px;
+    margin: 3px 0;
+    font-size: 0.88rem;
+}
+.comment_body > p:not(:first-child) {
+    margin-top: 14px;
+}
+.comment {
+    margin: 6px 0;
+}
+.comment_score {
+    font-size: 12px;
+    padding: 7px 0;
+    min-width: 36px;
+}
+.comment_left {
+    min-width: 42px;
+    padding: 4px 0;
+}
+/* Author / metadata line: slightly muted */
+.comment_data {
+    font-size: 0.8rem;
+    opacity: 0.88;
+}
+.comment_author {
+    font-size: 0.82rem;
+}
+/* Replies indented area: inherit smaller font */
+.replies > .comment {
+    margin: 4px 0;
+}
+
 /* ── end UX v3 ────────────────────────────────────────────── */
