@@ -16,7 +16,7 @@ use redlib::client::{
 };
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
-use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, submit, subreddit, user, vote};
+use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, smart_feed, submit, subreddit, user, vote};
 
 use redlib::client::OAUTH_CLIENT;
 
@@ -299,6 +299,8 @@ async fn main() {
 	LazyLock::force(&instance_info::INSTANCE_INFO);
 	info!("Creating OAUTH client.");
 	LazyLock::force(&OAUTH_CLIENT);
+	info!("Initializing local state store.");
+	LazyLock::force(&redlib::state::STATE);
 
 	// Define default headers (added to all responses)
 	app.default_headers = headers! {
@@ -452,6 +454,16 @@ async fn main() {
 	// Custom feeds (internal named multireddits)
 	app.at("/feeds").get(|r| feeds::get(r).boxed()).post(|r| feeds::post(r).boxed());
 	app.at("/feed/:name").get(|r| feeds::redirect_to_feed(r).boxed());
+
+	// Smart feed engine: ranked/filtered feed with Lenses + Presets
+	app.at("/reader/:channel").get(|r| smart_feed::view(r).boxed());
+	app.at("/action/mark_read").post(|r| smart_feed::action_mark_read(r).boxed());
+	app.at("/action/mark_unread").post(|r| smart_feed::action_mark_unread(r).boxed());
+	app.at("/action/save").post(|r| smart_feed::action_save(r).boxed());
+	app.at("/action/unsave").post(|r| smart_feed::action_unsave(r).boxed());
+	app.at("/action/mute_keyword").post(|r| smart_feed::action_mute_keyword(r).boxed());
+	app.at("/action/mute_domain").post(|r| smart_feed::action_mute_domain(r).boxed());
+	app.at("/action/mute_subreddit").post(|r| smart_feed::action_mute_subreddit(r).boxed());
 
 	// REST API
 	app.at("/api/v1/r/:sub").get(|r| api::subreddit_listing(r).boxed());

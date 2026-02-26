@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}{{ channel_title }}{% endblock %}
+
+{% block subscriptions %}
+  {% call utils::sub_list("") %}
+{% endblock %}
+
+{% block body %}
+<div id="reader_header">
+  <strong>{{ channel_title }}</strong>
+  <span class="reader_meta"> · {{ preset_title }}</span>
+  <div class="reader_lens_bar">
+    <a href="/reader/{{ channel_slug }}?lens=reader&preset=digest15"{% if lens == "reader" %} class="active"{% endif %}>Reader</a>
+    <a href="/reader/{{ channel_slug }}?lens=research&preset=deepdives"{% if lens == "research" %} class="active"{% endif %}>Research</a>
+    <a href="/reader/{{ channel_slug }}?lens=discussion&preset=live"{% if lens == "discussion" %} class="active"{% endif %}>Discussion</a>
+  </div>
+</div>
+
+<div id="feed_items">
+{% for item in items %}
+  <div class="feed_item{% if item.is_read %} feed_item_read{% elif item.is_saved %} feed_item_saved{% endif %}">
+    <div class="feed_item_title">
+      <a href="{{ item.post.permalink }}">{{ item.post.title }}</a>
+    </div>
+    <div class="feed_item_meta">
+      <span class="feed_sub">r/{{ item.post.community }}</span>
+      {% if item.post.domain != "" && !item.post.domain.starts_with("self.") %}
+        <span class="feed_domain">{{ item.post.domain }}</span>
+      {% endif %}
+      <span class="feed_time">{{ item.post.rel_time }}</span>
+      <span class="feed_comments">{{ item.post.comments.0 }} comments</span>
+      {% if item.cluster_size > 1 %}
+        <span class="feed_cluster">+{{ item.cluster_size - 1 }} similar</span>
+      {% endif %}
+    </div>
+
+    {% if !item.why.is_empty() %}
+    <div class="feed_why">
+      {% for w in &item.why %}
+        <span class="feed_why_tag">{{ w }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if csrf != "" %}
+    <div class="feed_actions">
+      {% if item.is_read %}
+      <form action="/action/mark_unread" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="post_id" value="{{ item.post.id }}">
+        <button type="submit" class="feed_action_btn">Mark unread</button>
+      </form>
+      {% else %}
+      <form action="/action/mark_read" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="post_id" value="{{ item.post.id }}">
+        <button type="submit" class="feed_action_btn">Mark read</button>
+      </form>
+      {% endif %}
+      <form action="{% if item.is_saved %}/action/unsave{% else %}/action/save{% endif %}" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="post_id" value="{{ item.post.id }}">
+        <button type="submit" class="feed_action_btn">{% if item.is_saved %}Unsave{% else %}Save{% endif %}</button>
+      </form>
+      <form action="/action/mute_subreddit" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="pattern" value="{{ item.post.community }}">
+        <button type="submit" class="feed_action_btn feed_mute_btn" title="Mute r/{{ item.post.community }}">Mute sub</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+{% endfor %}
+</div>
+{% endblock %}
