@@ -4,7 +4,10 @@
 use crate::auth::{update_session_cookie, AuthContext};
 use crate::client::json;
 use crate::server::RequestExt;
-use crate::utils::{error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, nsfw_landing, param, redirect, setting, template, Post, Preferences, User};
+use crate::utils::{
+	error, filter_media_only, filter_posts, filter_posts_by_content, filter_read_posts, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters,
+	get_read_ids, nsfw_landing, param, redirect, setting, template, Post, Preferences, User,
+};
 use crate::{config, utils};
 use askama::Template;
 use chrono::DateTime;
@@ -59,11 +62,7 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 	}
 
 	let listing = req.param("listing").unwrap_or_else(|| "overview".to_string());
-	let path = format!(
-		"/user/{}/{listing}.json?{}&raw_json=1",
-		username,
-		req.uri().query().unwrap_or_default(),
-	);
+	let path = format!("/user/{}/{listing}.json?{}&raw_json=1", username, req.uri().query().unwrap_or_default(),);
 	let url = String::from(req.uri().path_and_query().map_or("", |val| val.as_str()));
 	let redirect_url = url[1..].replace('?', "%3F").replace('&', "%26");
 	let sort = param(&path, "sort").unwrap_or_default();
@@ -98,9 +97,7 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 	}
 
 	let (mut posts, after) = if use_authed {
-		let ((mut p, a), session_updated) = Post::fetch_authed(&path, false, &auth)
-			.await
-			.map_err(|msg| msg.to_string())?;
+		let ((mut p, a), session_updated) = Post::fetch_authed(&path, false, &auth).await.map_err(|msg| msg.to_string())?;
 		let (_, all_posts_filtered) = filter_posts(&mut p, &filters);
 		filter_posts_by_content(&mut p, &get_filter_keywords(&req), &get_filter_flairs(&req), &get_filter_domains(&req));
 		if setting(&req, "hide_read") == "on" {
@@ -111,8 +108,7 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 			filter_media_only(&mut p);
 		}
 		let no_posts = p.is_empty();
-		let all_posts_hidden_nsfw =
-			!no_posts && (p.iter().all(|x| x.flags.nsfw) && setting(&req, "show_nsfw") != "on");
+		let all_posts_hidden_nsfw = !no_posts && (p.iter().all(|x| x.flags.nsfw) && setting(&req, "show_nsfw") != "on");
 		let mut res = template(&UserTemplate {
 			user,
 			posts: p,
@@ -148,8 +144,7 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 		filter_media_only(&mut posts);
 	}
 	let no_posts = posts.is_empty();
-	let all_posts_hidden_nsfw =
-		!no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
+	let all_posts_hidden_nsfw = !no_posts && (posts.iter().all(|p| p.flags.nsfw) && setting(&req, "show_nsfw") != "on");
 	Ok(template(&UserTemplate {
 		user,
 		posts,

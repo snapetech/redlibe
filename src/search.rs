@@ -1,7 +1,11 @@
 #![allow(clippy::cmp_owned)]
 
 // CRATES
-use crate::utils::{self, catch_random, error, filter_posts, filter_posts_by_content, filter_read_posts, filter_media_only, format_num, format_url, get_filter_domains, get_filter_flairs, get_filter_keywords, get_filters, get_read_ids, get_recent_searches, get_saved_searches, param, redirect, recent_searches_cookie_value, saved_searches_cookie_value_after_save, saved_searches_cookie_value_after_unsave, setting, template, val, Post, Preferences, SavedSearch};
+use crate::utils::{
+	self, catch_random, error, filter_media_only, filter_posts, filter_posts_by_content, filter_read_posts, format_num, format_url, get_filter_domains, get_filter_flairs,
+	get_filter_keywords, get_filters, get_read_ids, get_recent_searches, get_saved_searches, param, recent_searches_cookie_value, redirect,
+	saved_searches_cookie_value_after_save, saved_searches_cookie_value_after_unsave, setting, template, val, Post, Preferences, SavedSearch,
+};
 use crate::{
 	client::json,
 	server::{RequestExt, ResponseExt},
@@ -12,10 +16,10 @@ use cookie::Cookie;
 use hyper::{Body, Request, Response};
 use percent_encoding::utf8_percent_encode;
 use percent_encoding::NON_ALPHANUMERIC;
-use time::{Duration, OffsetDateTime};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use time::{Duration, OffsetDateTime};
 
 // STRUCTS
 #[derive(Clone)]
@@ -244,9 +248,7 @@ async fn search_subreddits(q: &str, typed: &str) -> Vec<Subreddit> {
 pub async fn save(req: Request<Body>) -> Result<Response<Body>, String> {
 	let (parts, body) = req.into_parts();
 	let body_bytes = hyper::body::to_bytes(body).await.map_err(|e| e.to_string())?;
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 	let q = form.get("q").cloned().unwrap_or_default();
 	let name = form.get("name").cloned().unwrap_or_default();
 	let req2 = Request::from_parts(parts, Body::empty());
@@ -271,9 +273,7 @@ pub async fn save(req: Request<Body>) -> Result<Response<Body>, String> {
 pub async fn unsave(req: Request<Body>) -> Result<Response<Body>, String> {
 	let (parts, body) = req.into_parts();
 	let body_bytes = hyper::body::to_bytes(body).await.map_err(|e| e.to_string())?;
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 	let q = form.get("q").cloned().unwrap_or_default();
 	let req2 = Request::from_parts(parts, Body::empty());
 	let cookie_val = saved_searches_cookie_value_after_unsave(&req2, &q);

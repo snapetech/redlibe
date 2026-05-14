@@ -195,9 +195,15 @@ pub async fn api_unread_count(req: Request<Body>) -> Result<Response<Body>, Stri
 		if let Some(user_key) = ensure_sid(&req, &mut fake_res) {
 			if let State::Sqlite(store) = &*STATE {
 				store.count_unread(&user_key).await.unwrap_or(0)
-			} else { 0 }
-		} else { 0 }
-	} else { 0 };
+			} else {
+				0
+			}
+		} else {
+			0
+		}
+	} else {
+		0
+	};
 	let json = format!("{{\"count\":{count}}}");
 	let mut res = Response::new(Body::from(json));
 	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("application/json"));
@@ -208,8 +214,7 @@ pub async fn api_unread_count(req: Request<Body>) -> Result<Response<Body>, Stri
 /// Marks the post read then redirects to the post URL.
 /// URL must be a relative path (starts with /) to prevent open redirect.
 pub async fn action_open(req: Request<Body>) -> Result<Response<Body>, String> {
-	let query: std::collections::HashMap<String, String> =
-		serde_urlencoded::from_str(req.uri().query().unwrap_or("")).unwrap_or_default();
+	let query: std::collections::HashMap<String, String> = serde_urlencoded::from_str(req.uri().query().unwrap_or("")).unwrap_or_default();
 
 	let post_id = query.get("post_id").cloned().unwrap_or_default();
 	let dest = query.get("url").cloned().unwrap_or_else(|| "/".to_string());

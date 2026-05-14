@@ -99,6 +99,8 @@ pub async fn cluster_view(req: Request<Body>) -> Result<Response<Body>, String> 
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }

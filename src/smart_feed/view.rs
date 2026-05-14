@@ -20,7 +20,7 @@ struct FeedQuery {
 	preset: Option<String>,
 	clusters: Option<String>,
 	limit: Option<u32>,
-	filter: Option<String>,  // "all" | "unread" | "saved"
+	filter: Option<String>, // "all" | "unread" | "saved"
 	after: Option<String>,
 }
 
@@ -69,9 +69,7 @@ pub(super) fn build_fetch_subs(rule: &ChannelRule, prefs: &Preferences) -> Resul
 		}
 	}
 	if subs.is_empty() {
-		return Err(
-			"No subreddits configured for this channel. Add subreddits in channel settings, or enable 'Include subscriptions'.".to_string(),
-		);
+		return Err("No subreddits configured for this channel. Add subreddits in channel settings, or enable 'Include subscriptions'.".to_string());
 	}
 	Ok(subs.join("+"))
 }
@@ -160,7 +158,6 @@ fn passes_channel_filters(post: &Post, filters: &super::channel::Filters) -> boo
 	}
 	true
 }
-
 
 pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 	let prefs = Preferences::new(&req);
@@ -323,7 +320,19 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 		} else {
 			String::new()
 		};
-		scored.push((FeedItem { post: p, is_read, is_saved, is_archived, why, cluster_id: None, cluster_size: 1, body_preview }, score));
+		scored.push((
+			FeedItem {
+				post: p,
+				is_read,
+				is_saved,
+				is_archived,
+				why,
+				cluster_id: None,
+				cluster_size: 1,
+				body_preview,
+			},
+			score,
+		));
 	}
 
 	scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -398,6 +407,8 @@ pub async fn view(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }

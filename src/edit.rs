@@ -32,9 +32,7 @@ pub async fn submit(req: Request<Body>) -> Result<Response<Body>, String> {
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large.".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	let submitted_csrf = form.get("csrf_token").map(|s| s.as_str()).unwrap_or("");
 	validate_csrf_token(&auth, submitted_csrf)?;
@@ -54,17 +52,10 @@ pub async fn submit(req: Request<Body>) -> Result<Response<Body>, String> {
 	let return_to = safe_return_to(return_to);
 
 	if action == "delete" {
-		let body_str = format!(
-			"id={}",
-			percent_encoding::utf8_percent_encode(thing_id, percent_encoding::NON_ALPHANUMERIC)
-		);
+		let body_str = format!("id={}", percent_encoding::utf8_percent_encode(thing_id, percent_encoding::NON_ALPHANUMERIC));
 		let (value, session_updated) = authed_post("/api/del".to_string(), body_str, &auth).await?;
 		if value.get("error").and_then(|e| e.as_i64()).is_some() {
-			return Err(format!(
-				"Reddit: {} | {}",
-				value["reason"].as_str().unwrap_or(""),
-				value["message"].as_str().unwrap_or("")
-			));
+			return Err(format!("Reddit: {} | {}", value["reason"].as_str().unwrap_or(""), value["message"].as_str().unwrap_or("")));
 		}
 		let mut res = redirect(return_to);
 		if let Some(s) = session_updated {

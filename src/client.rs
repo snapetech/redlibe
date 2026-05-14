@@ -699,102 +699,102 @@ async fn json_once(path: String, quarantine: bool, attempt: u8) -> Result<Value,
 				None
 			};
 
-				// asynchronously aggregate the chunks of the body
-				match hyper::body::aggregate(response).await {
-					Ok(mut body) => {
-						let has_remaining = body.has_remaining();
+			// asynchronously aggregate the chunks of the body
+			match hyper::body::aggregate(response).await {
+				Ok(mut body) => {
+					let has_remaining = body.has_remaining();
 
-						if !has_remaining {
-							// Rate limited, so spawn a force_refresh_token()
-							tokio::spawn(force_refresh_token());
-							return match reset {
-								Some(val) => Err(format!(
-									"Reddit rate limit exceeded. Try refreshing in a few seconds.\
+					if !has_remaining {
+						// Rate limited, so spawn a force_refresh_token()
+						tokio::spawn(force_refresh_token());
+						return match reset {
+							Some(val) => Err(format!(
+								"Reddit rate limit exceeded. Try refreshing in a few seconds.\
 									 Rate limit will reset in: {val}"
-								)),
-								None => Err("Reddit rate limit exceeded".to_string()),
-							};
-						}
+							)),
+							None => Err("Reddit rate limit exceeded".to_string()),
+						};
+					}
 
-						// Copy to bytes so we can inspect on parse failure
-						let bytes = body.copy_to_bytes(body.remaining());
+					// Copy to bytes so we can inspect on parse failure
+					let bytes = body.copy_to_bytes(body.remaining());
 
-						// Parse the response from Reddit as JSON
-						match serde_json::from_slice::<Value>(&bytes) {
-							Ok(json) => {
-								// If user is suspended
-								if let Some(data) = json.get("data") {
-									if let Some(is_suspended) = data.get("is_suspended").and_then(Value::as_bool) {
-										if is_suspended {
-											return Err("suspended".into());
-										}
+					// Parse the response from Reddit as JSON
+					match serde_json::from_slice::<Value>(&bytes) {
+						Ok(json) => {
+							// If user is suspended
+							if let Some(data) = json.get("data") {
+								if let Some(is_suspended) = data.get("is_suspended").and_then(Value::as_bool) {
+									if is_suspended {
+										return Err("suspended".into());
 									}
-								}
-
-								// If Reddit returned an error
-								if json["error"].is_i64() {
-									// OAuth token has expired; http status 401
-									if json["message"] == "Unauthorized" {
-										error!("Forcing a token refresh");
-										let () = force_refresh_token().await;
-										return Err("OAuth token has expired. Please refresh the page!".to_string());
-									}
-
-									// Handle quarantined
-									if json["reason"] == "quarantined" {
-										return Err("quarantined".into());
-									}
-									// Handle gated
-									if json["reason"] == "gated" {
-										return Err("gated".into());
-									}
-									// Handle private subs
-									if json["reason"] == "private" {
-										return Err("private".into());
-									}
-									// Handle banned subs
-									if json["reason"] == "banned" {
-										return Err("banned".into());
-									}
-
-									Err(format!("Reddit error {} \"{}\": {} | {path}", json["error"], json["reason"], json["message"]))
-								} else {
-									Ok(json)
 								}
 							}
-							Err(e) => {
-								error!("Got an invalid response from reddit {e}. Status code: {status}");
-								if status.is_server_error() {
-									on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "server error + invalid json");
-									return Err("Reddit is having issues, check if there's an outage".to_string());
+
+							// If Reddit returned an error
+							if json["error"].is_i64() {
+								// OAuth token has expired; http status 401
+								if json["message"] == "Unauthorized" {
+									error!("Forcing a token refresh");
+									let () = force_refresh_token().await;
+									return Err("OAuth token has expired. Please refresh the page!".to_string());
 								}
-								// Provide a clearer message when Reddit returns HTML or empty body
-								let hint = if bytes.is_empty() {
-									format!("Reddit returned an empty response (HTTP {status}).")
-								} else if bytes.first().copied() == Some(b'<') {
-									if status.as_u16() == 403 {
-										on_upstream_failure(&path, "html_403", Some(403), attempt, "html instead of json");
-									} else {
-										on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "html instead of json");
-									}
-									format!(
-										"Reddit returned an HTML page instead of JSON (HTTP {status}). \
+
+								// Handle quarantined
+								if json["reason"] == "quarantined" {
+									return Err("quarantined".into());
+								}
+								// Handle gated
+								if json["reason"] == "gated" {
+									return Err("gated".into());
+								}
+								// Handle private subs
+								if json["reason"] == "private" {
+									return Err("private".into());
+								}
+								// Handle banned subs
+								if json["reason"] == "banned" {
+									return Err("banned".into());
+								}
+
+								Err(format!("Reddit error {} \"{}\": {} | {path}", json["error"], json["reason"], json["message"]))
+							} else {
+								Ok(json)
+							}
+						}
+						Err(e) => {
+							error!("Got an invalid response from reddit {e}. Status code: {status}");
+							if status.is_server_error() {
+								on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "server error + invalid json");
+								return Err("Reddit is having issues, check if there's an outage".to_string());
+							}
+							// Provide a clearer message when Reddit returns HTML or empty body
+							let hint = if bytes.is_empty() {
+								format!("Reddit returned an empty response (HTTP {status}).")
+							} else if bytes.first().copied() == Some(b'<') {
+								if status.as_u16() == 403 {
+									on_upstream_failure(&path, "html_403", Some(403), attempt, "html instead of json");
+								} else {
+									on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "html instead of json");
+								}
+								format!(
+									"Reddit returned an HTML page instead of JSON (HTTP {status}). \
 										The instance may be blocked, rate limited, or the anonymous OAuth flow may be failing. \
 										See https://github.com/redlib-org/redlib/issues/446"
-									)
-								} else {
-									on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "json parse error");
-									format!("{e} | {path}")
-								};
-								err("Failed to parse page JSON data", hint, path)
-							}
+								)
+							} else {
+								on_upstream_failure(&path, "parse", Some(status.as_u16()), attempt, "json parse error");
+								format!("{e} | {path}")
+							};
+							err("Failed to parse page JSON data", hint, path)
 						}
 					}
-					Err(e) => {
-						on_upstream_failure(&path, "transport", Some(status.as_u16()), attempt, "body receive failed");
-						err("Failed receiving body from Reddit", e.to_string(), path)
-					}
 				}
+				Err(e) => {
+					on_upstream_failure(&path, "transport", Some(status.as_u16()), attempt, "body receive failed");
+					err("Failed receiving body from Reddit", e.to_string(), path)
+				}
+			}
 		}
 		Err(e) => {
 			on_upstream_failure(&path, "transport", None, attempt, &e);
@@ -839,10 +839,7 @@ pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> 
 				};
 				let (retry_json, _) = authed_json_with_bearer(path, quarantine, &new_session.access_token).await?;
 				if retry_json["error"].is_i64() {
-					return Err(format!(
-						"Reddit API error {}: {} | {}",
-						retry_json["error"], retry_json["reason"], retry_json["message"]
-					));
+					return Err(format!("Reddit API error {}: {} | {}", retry_json["error"], retry_json["reason"], retry_json["message"]));
 				}
 				return Ok((retry_json, Some(new_session)));
 			}
@@ -850,10 +847,7 @@ pub async fn authed_json(path: String, quarantine: bool, auth: &AuthContext) -> 
 		return Err("OAuth token is unauthorized — session may have expired".to_string());
 	}
 	if json["error"].is_i64() {
-		return Err(format!(
-			"Reddit API error {}: {} | {}",
-			json["error"], json["reason"], json["message"]
-		));
+		return Err(format!("Reddit API error {}: {} | {}", json["error"], json["reason"], json["message"]));
 	}
 	Ok((json, None))
 }
@@ -919,16 +913,10 @@ pub async fn fetch_subscribed_subreddits_with_bearer(bearer: &str) -> Result<Vec
 	let path = "/subreddits/mine/subscriber.json?limit=100&raw_json=1".to_string();
 	let (json, _) = authed_json_with_bearer(path, false, bearer).await?;
 	if json["error"].is_i64() {
-		return Err(format!(
-			"Reddit API error {}: {} | {}",
-			json["error"], json["reason"], json["message"]
-		));
+		return Err(format!("Reddit API error {}: {} | {}", json["error"], json["reason"], json["message"]));
 	}
 	let children = json["data"]["children"].as_array().ok_or("Invalid mine/subscriber response")?;
-	let names: Vec<String> = children
-		.iter()
-		.filter_map(|c| c["data"]["display_name"].as_str().map(String::from))
-		.collect();
+	let names: Vec<String> = children.iter().filter_map(|c| c["data"]["display_name"].as_str().map(String::from)).collect();
 	Ok(names)
 }
 
@@ -937,10 +925,7 @@ pub async fn fetch_subscribed_subreddits(auth: &AuthContext) -> Result<Vec<Strin
 	let path = "/subreddits/mine/subscriber.json?limit=100&raw_json=1".to_string();
 	let (json, _) = authed_json(path, false, auth).await?;
 	let children = json["data"]["children"].as_array().ok_or("Invalid mine/subscriber response")?;
-	let names: Vec<String> = children
-		.iter()
-		.filter_map(|c| c["data"]["display_name"].as_str().map(String::from))
-		.collect();
+	let names: Vec<String> = children.iter().filter_map(|c| c["data"]["display_name"].as_str().map(String::from)).collect();
 	Ok(names)
 }
 
@@ -954,9 +939,7 @@ pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> 
 	let bearer = auth.bearer_token().ok_or("Authenticated POST requires a logged-in session")?;
 
 	let (value, updated) = authed_post_with_bearer(path.clone(), body_str.clone(), bearer).await?;
-	if value.get("error").and_then(|e| e.as_i64()).is_some()
-		&& value.get("message").and_then(|m| m.as_str()) == Some("Unauthorized")
-	{
+	if value.get("error").and_then(|e| e.as_i64()).is_some() && value.get("message").and_then(|m| m.as_str()) == Some("Unauthorized") {
 		if let Some(s) = auth.session_data() {
 			if !s.refresh_token.is_empty() {
 				let (new_token, expires_at) = refresh_access_token(&s.refresh_token).await?;
@@ -969,10 +952,7 @@ pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> 
 				};
 				let (retry_value, _) = authed_post_with_bearer(path, body_str, &new_session.access_token).await?;
 				if retry_value.get("error").and_then(|e| e.as_i64()).is_some() {
-					return Err(format!(
-						"Reddit API error {}: {} | {}",
-						retry_value["error"], retry_value["reason"], retry_value["message"]
-					));
+					return Err(format!("Reddit API error {}: {} | {}", retry_value["error"], retry_value["reason"], retry_value["message"]));
 				}
 				return Ok((retry_value, Some(new_session)));
 			}
@@ -980,10 +960,7 @@ pub async fn authed_post(path: String, body_str: String, auth: &AuthContext) -> 
 		return Err("OAuth token is unauthorized — session may have expired".to_string());
 	}
 	if value.get("error").and_then(|e| e.as_i64()).is_some() {
-		return Err(format!(
-			"Reddit API error {}: {} | {}",
-			value["error"], value["reason"], value["message"]
-		));
+		return Err(format!("Reddit API error {}: {} | {}", value["error"], value["reason"], value["message"]));
 	}
 	Ok((value, updated))
 }

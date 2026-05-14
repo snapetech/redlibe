@@ -67,9 +67,16 @@ pub async fn saved_view(req: Request<Body>) -> Result<Response<Body>, String> {
 		})
 		.collect();
 
-	let body = SavedTemplate { prefs, items, csrf: csrf_tok, url };
+	let body = SavedTemplate {
+		prefs,
+		items,
+		csrf: csrf_tok,
+		url,
+	};
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }

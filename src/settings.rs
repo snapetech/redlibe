@@ -317,12 +317,14 @@ pub async fn encoded_restore(req: Request<Body>) -> Result<Response<Body>, Strin
 pub async fn export_json(req: Request<Body>) -> Result<Response<Body>, String> {
 	let prefs = Preferences::new(&req);
 	let json = prefs.to_json().map_err(|e| e.to_string())?;
-	Ok(Response::builder()
-		.status(200)
-		.header("Content-Type", "application/json")
-		.header("Content-Disposition", "attachment; filename=\"redlib-settings.json\"")
-		.body(json.into())
-		.unwrap_or_default())
+	Ok(
+		Response::builder()
+			.status(200)
+			.header("Content-Type", "application/json")
+			.header("Content-Disposition", "attachment; filename=\"redlib-settings.json\"")
+			.body(json.into())
+			.unwrap_or_default(),
+	)
 }
 
 /// GET /settings/export-env: return current preferences as REDLIB_* lines (user-shareable profile format).
@@ -340,19 +342,19 @@ pub async fn export_env(req: Request<Body>) -> Result<Response<Body>, String> {
 		out.push_str(&format!(r#"{env_key}="{escaped}""#));
 		out.push('\n');
 	}
-	Ok(Response::builder()
-		.status(200)
-		.header("Content-Type", "text/plain; charset=utf-8")
-		.header("Content-Disposition", "attachment; filename=\"redlib-user-prefs.env\"")
-		.body(out.into())
-		.unwrap_or_default())
+	Ok(
+		Response::builder()
+			.status(200)
+			.header("Content-Type", "text/plain; charset=utf-8")
+			.header("Content-Disposition", "attachment; filename=\"redlib-user-prefs.env\"")
+			.body(out.into())
+			.unwrap_or_default(),
+	)
 }
 
 /// POST /settings/import-json: body is JSON preferences (or form field "json"). Redirects to restore to set cookies.
 pub async fn import_json(req: Request<Body>) -> Result<Response<Body>, String> {
-	let body = hyper::body::to_bytes(req.into_body())
-		.await
-		.map_err(|e| format!("Failed to get request body: {e}"))?;
+	let body = hyper::body::to_bytes(req.into_body()).await.map_err(|e| format!("Failed to get request body: {e}"))?;
 
 	if body.len() > 512 * 1024 {
 		return Err("Request body too large".to_string());
@@ -370,8 +372,7 @@ pub async fn import_json(req: Request<Body>) -> Result<Response<Body>, String> {
 		form
 	};
 
-	let mut prefs: Preferences =
-		serde_json::from_str(&json_str).map_err(|e| format!("Invalid JSON: {e}"))?;
+	let mut prefs: Preferences = serde_json::from_str(&json_str).map_err(|e| format!("Invalid JSON: {e}"))?;
 	prefs.available_themes = vec![];
 
 	let url = format!("/settings/restore/?{}", prefs.to_urlencoded().map_err(|e| e.to_string())?);

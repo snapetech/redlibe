@@ -34,9 +34,7 @@ pub async fn submit(req: Request<Body>) -> Result<Response<Body>, String> {
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	let submitted_csrf = form.get("csrf_token").map(|s| s.as_str()).unwrap_or("");
 	validate_csrf_token(&auth, submitted_csrf)?;

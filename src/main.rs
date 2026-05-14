@@ -11,9 +11,7 @@ use futures_lite::FutureExt;
 use hyper::Uri;
 use hyper::{header::HeaderValue, Body, Request, Response};
 use log::{info, warn};
-use redlib::client::{
-	canonical_path, proxy, rate_limit_check, upstream_diagnostics_snapshot, upstream_metrics_snapshot_json, upstream_prometheus_metrics, CLIENT,
-};
+use redlib::client::{canonical_path, proxy, rate_limit_check, upstream_diagnostics_snapshot, upstream_metrics_snapshot_json, upstream_prometheus_metrics, CLIENT};
 use redlib::server::{self, RequestExt};
 use redlib::utils::{error, redirect, ThemeAssets};
 use redlib::{api, auth, comment, config, duplicates, edit, feeds, go, headers, inbox, instance_info, post, search, settings, smart_feed, submit, subreddit, user, vote};
@@ -94,10 +92,7 @@ async fn resource(body: &str, content_type: &str, cache: bool) -> Result<Respons
 }
 
 fn html_escape(s: &str) -> String {
-	s.replace('&', "&amp;")
-		.replace('<', "&lt;")
-		.replace('>', "&gt;")
-		.replace('"', "&quot;")
+	s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 async fn prometheus_metrics() -> Result<Response<Body>, String> {
@@ -118,11 +113,7 @@ async fn upstream_diagnostics_page() -> Result<Response<Body>, String> {
 	let upstream_diag = upstream_diagnostics_snapshot();
 	let (hits, misses, stores, entries) = subreddit::render_cache_metrics_snapshot();
 	let total = hits + misses;
-	let hit_ratio = if total == 0 {
-		0.0
-	} else {
-		(hits as f64 / total as f64) * 100.0
-	};
+	let hit_ratio = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
 	let html = format!(
 		r#"<!doctype html>
 <html lang="en">
@@ -290,15 +281,18 @@ async fn main() {
 	// Force evaluation of statics. In instance_info case, we need to evaluate
 	// the timestamp so deploy date is accurate - in config case, we need to
 	// evaluate the configuration to avoid paying penalty at first request -
-	// in OAUTH case, we need to retrieve the token to avoid paying penalty
-	// at first request
+	// in OAUTH case, optionally retrieve the token at startup to avoid paying
+	// the penalty at first request. Keep this lazy by default so SSH-session-only
+	// deployments can start even when Reddit's anonymous OAuth flow is unhealthy.
 
 	info!("Evaluating config.");
 	LazyLock::force(&config::CONFIG);
 	info!("Evaluating instance info.");
 	LazyLock::force(&instance_info::INSTANCE_INFO);
-	info!("Creating OAUTH client.");
-	LazyLock::force(&OAUTH_CLIENT);
+	if std::env::var("REDLIB_EAGER_OAUTH").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+		info!("Creating OAUTH client.");
+		LazyLock::force(&OAUTH_CLIENT);
+	}
 	info!("Initializing local state store.");
 	LazyLock::force(&redlib::state::STATE);
 
@@ -358,18 +352,23 @@ async fn main() {
 		.at("/check_update.js")
 		.get(|_| resource(include_str!("../static/check_update.js"), "text/javascript", false).boxed());
 	app.at("/copy.js").get(|_| resource(include_str!("../static/copy.js"), "text/javascript", false).boxed());
-	app.at("/settings.js").get(|_| resource(include_str!("../static/settings.js"), "text/javascript", false).boxed());
+	app
+		.at("/settings.js")
+		.get(|_| resource(include_str!("../static/settings.js"), "text/javascript", false).boxed());
 	app.at("/power.js").get(|_| resource(include_str!("../static/power.js"), "text/javascript", false).boxed());
-	app.at("/upstream-metrics.json").get(|_| async {
-		Ok::<Response<Body>, String>(
-			Response::builder()
-				.status(200)
-				.header("content-type", "application/json")
-				.header("Cache-Control", "no-store")
-				.body(upstream_metrics_snapshot_json().into())
-				.unwrap_or_default(),
-		)
-	}.boxed());
+	app.at("/upstream-metrics.json").get(|_| {
+		async {
+			Ok::<Response<Body>, String>(
+				Response::builder()
+					.status(200)
+					.header("content-type", "application/json")
+					.header("Cache-Control", "no-store")
+					.body(upstream_metrics_snapshot_json().into())
+					.unwrap_or_default(),
+			)
+		}
+		.boxed()
+	});
 	app.at("/metrics").get(|_| prometheus_metrics().boxed());
 	app.at("/diagnostics/upstream").get(|_| upstream_diagnostics_page().boxed());
 
@@ -473,8 +472,14 @@ async fn main() {
 	app.at("/action/sync_subscriptions").post(|r| crate::auth::sync_subscriptions(r).boxed());
 
 	// Channel management + cluster view + mutes + saved
-	app.at("/channels").get(|r| smart_feed::channels_list(r).boxed()).post(|r| smart_feed::channels_create(r).boxed());
-	app.at("/channels/:slug").get(|r| smart_feed::channels_edit(r).boxed()).post(|r| smart_feed::channels_update(r).boxed());
+	app
+		.at("/channels")
+		.get(|r| smart_feed::channels_list(r).boxed())
+		.post(|r| smart_feed::channels_create(r).boxed());
+	app
+		.at("/channels/:slug")
+		.get(|r| smart_feed::channels_edit(r).boxed())
+		.post(|r| smart_feed::channels_update(r).boxed());
 	app.at("/channels/:slug/delete").post(|r| smart_feed::channels_delete(r).boxed());
 	app.at("/channels/:slug/move").post(|r| smart_feed::channels_move(r).boxed());
 	app.at("/cluster/:id").get(|r| smart_feed::cluster_view(r).boxed());

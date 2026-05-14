@@ -102,7 +102,12 @@ impl SqliteStore {
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
 				.query_map(params![user_key, scope], |row| {
-					Ok(MuteRule { id: row.get(0)?, scope: row.get(1)?, rule_type: row.get(2)?, pattern: row.get(3)? })
+					Ok(MuteRule {
+						id: row.get(0)?,
+						scope: row.get(1)?,
+						rule_type: row.get(2)?,
+						pattern: row.get(3)?,
+					})
 				})
 				.map_err(|e| e.to_string())?;
 			let mut out = Vec::new();
@@ -125,7 +130,12 @@ impl SqliteStore {
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
 				.query_map(params![user_key], |row| {
-					Ok(MuteRule { id: row.get(0)?, scope: row.get(1)?, rule_type: row.get(2)?, pattern: row.get(3)? })
+					Ok(MuteRule {
+						id: row.get(0)?,
+						scope: row.get(1)?,
+						rule_type: row.get(2)?,
+						pattern: row.get(3)?,
+					})
 				})
 				.map_err(|e| e.to_string())?;
 			let mut out = Vec::new();
@@ -146,11 +156,12 @@ impl SqliteStore {
 		let pattern = pattern.to_string();
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute(
-				"INSERT OR IGNORE INTO mute_rule(user_key, scope, rule_type, pattern, created_at) VALUES(?1, ?2, ?3, ?4, strftime('%s','now'))",
-				params![user_key, scope, rule_type, pattern],
-			)
-			.map_err(|e| e.to_string())?;
+			conn
+				.execute(
+					"INSERT OR IGNORE INTO mute_rule(user_key, scope, rule_type, pattern, created_at) VALUES(?1, ?2, ?3, ?4, strftime('%s','now'))",
+					params![user_key, scope, rule_type, pattern],
+				)
+				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
 		.await
@@ -162,7 +173,8 @@ impl SqliteStore {
 		let user_key = user_key.to_string();
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute("DELETE FROM mute_rule WHERE id = ?1 AND user_key = ?2", params![mute_id, user_key])
+			conn
+				.execute("DELETE FROM mute_rule WHERE id = ?1 AND user_key = ?2", params![mute_id, user_key])
 				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
@@ -268,13 +280,14 @@ impl SqliteStore {
 		let val = if archived { 1i64 } else { 0i64 };
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute(
-				"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at, is_archived)
+			conn
+				.execute(
+					"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at, is_archived)
                  VALUES(?1, ?2, strftime('%s','now'), strftime('%s','now'), 0, NULL, ?3)
                  ON CONFLICT(user_key, post_id) DO UPDATE SET is_archived = excluded.is_archived, last_seen_at = excluded.last_seen_at",
-				params![user_key, post_id, val],
-			)
-			.map_err(|e| e.to_string())?;
+					params![user_key, post_id, val],
+				)
+				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
 		.await
@@ -294,11 +307,7 @@ impl SqliteStore {
 					.prepare("SELECT post_id FROM post_state WHERE user_key = ?1 AND post_id = ?2 AND is_archived = 1")
 					.map_err(|e| e.to_string())?;
 				for id in ids {
-					if let Some(pid) = stmt
-						.query_row(params![user_key, id], |row| row.get::<_, String>(0))
-						.optional()
-						.map_err(|e| e.to_string())?
-					{
+					if let Some(pid) = stmt.query_row(params![user_key, id], |row| row.get::<_, String>(0)).optional().map_err(|e| e.to_string())? {
 						out.insert(pid);
 					}
 				}
@@ -315,12 +324,11 @@ impl SqliteStore {
 		let user_key = user_key.to_string();
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.query_row(
-				"SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 0",
-				params![user_key],
-				|r| r.get::<_, i64>(0),
-			)
-			.map_err(|e| e.to_string())
+			conn
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 0", params![user_key], |r| {
+					r.get::<_, i64>(0)
+				})
+				.map_err(|e| e.to_string())
 		})
 		.await
 		.map_err(|e| e.to_string())?
@@ -347,13 +355,14 @@ impl SqliteStore {
 		let is_read = if is_read { 1i64 } else { 0i64 };
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute(
-				"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at)
+			conn
+				.execute(
+					"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at)
                  VALUES(?1, ?2, strftime('%s','now'), strftime('%s','now'), ?3, NULL)
                  ON CONFLICT(user_key, post_id) DO UPDATE SET is_read = excluded.is_read, last_seen_at = excluded.last_seen_at",
-				params![user_key, post_id, is_read],
-			)
-			.map_err(|e| e.to_string())?;
+					params![user_key, post_id, is_read],
+				)
+				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
 		.await
@@ -368,19 +377,18 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			if is_save {
-				conn.execute(
-					"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at)
+				conn
+					.execute(
+						"INSERT INTO post_state(user_key, post_id, first_seen_at, last_seen_at, is_read, saved_at)
                      VALUES(?1, ?2, strftime('%s','now'), strftime('%s','now'), 0, strftime('%s','now'))
                      ON CONFLICT(user_key, post_id) DO UPDATE SET saved_at = excluded.saved_at, last_seen_at = excluded.last_seen_at",
-					params![user_key, post_id],
-				)
-				.map_err(|e| e.to_string())?;
+						params![user_key, post_id],
+					)
+					.map_err(|e| e.to_string())?;
 			} else {
-				conn.execute(
-					"UPDATE post_state SET saved_at = NULL WHERE user_key = ?1 AND post_id = ?2",
-					params![user_key, post_id],
-				)
-				.map_err(|e| e.to_string())?;
+				conn
+					.execute("UPDATE post_state SET saved_at = NULL WHERE user_key = ?1 AND post_id = ?2", params![user_key, post_id])
+					.map_err(|e| e.to_string())?;
 			}
 			Ok(())
 		})
@@ -411,7 +419,8 @@ impl SqliteStore {
 					)
 					.map_err(|e| e.to_string())?;
 				for e in &entries {
-					stmt.execute(params![e.post_id, e.title, e.community, e.domain, e.permalink, e.score, e.comments, e.created_utc, now])
+					stmt
+						.execute(params![e.post_id, e.title, e.community, e.domain, e.permalink, e.score, e.comments, e.created_utc, now])
 						.map_err(|e| e.to_string())?;
 				}
 			}
@@ -488,13 +497,14 @@ impl SqliteStore {
 		let channel_slug = channel_slug.to_string();
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute(
-				"INSERT INTO channel_visit(user_key, channel_slug, last_visited_at)
+			conn
+				.execute(
+					"INSERT INTO channel_visit(user_key, channel_slug, last_visited_at)
                  VALUES(?1, ?2, ?3)
                  ON CONFLICT(user_key, channel_slug) DO UPDATE SET last_visited_at = excluded.last_visited_at",
-				params![user_key, channel_slug, now],
-			)
-			.map_err(|e| e.to_string())?;
+					params![user_key, channel_slug, now],
+				)
+				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
 		.await
@@ -509,9 +519,7 @@ impl SqliteStore {
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
 			let mut stmt = conn
-				.prepare(
-					"SELECT slug, title, rule_json, created_at, updated_at, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC",
-				)
+				.prepare("SELECT slug, title, rule_json, created_at, updated_at, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC")
 				.map_err(|e| e.to_string())?;
 			let rows = stmt
 				.query_map(params![user_key], |row| {
@@ -602,13 +610,16 @@ impl SqliteStore {
 			let tx = conn.transaction().map_err(|e| e.to_string())?;
 			// Get all channels in order
 			let mut channels: Vec<(String, i64)> = {
-				let mut stmt = tx.prepare(
-					"SELECT slug, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC"
-				).map_err(|e| e.to_string())?;
-				let rows = stmt.query_map(params![user_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+				let mut stmt = tx
+					.prepare("SELECT slug, sort_order FROM channel WHERE user_key = ?1 ORDER BY sort_order ASC, title ASC")
+					.map_err(|e| e.to_string())?;
+				let rows = stmt
+					.query_map(params![user_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
 					.map_err(|e| e.to_string())?;
 				let mut out = Vec::new();
-				for r in rows { out.push(r.map_err(|e| e.to_string())?); }
+				for r in rows {
+					out.push(r.map_err(|e| e.to_string())?);
+				}
 				out
 			};
 			// Find current index
@@ -617,19 +628,21 @@ impl SqliteStore {
 				None => return tx.commit().map_err(|e| e.to_string()),
 			};
 			let target = if direction < 0 {
-				if idx == 0 { return tx.commit().map_err(|e| e.to_string()); }
+				if idx == 0 {
+					return tx.commit().map_err(|e| e.to_string());
+				}
 				idx - 1
 			} else {
-				if idx + 1 >= channels.len() { return tx.commit().map_err(|e| e.to_string()); }
+				if idx + 1 >= channels.len() {
+					return tx.commit().map_err(|e| e.to_string());
+				}
 				idx + 1
 			};
 			channels.swap(idx, target);
 			// Re-assign sort_order 0, 1, 2, ...
 			for (i, (s, _)) in channels.iter().enumerate() {
-				tx.execute(
-					"UPDATE channel SET sort_order = ?1 WHERE user_key = ?2 AND slug = ?3",
-					params![i as i64, user_key, s],
-				).map_err(|e| e.to_string())?;
+				tx.execute("UPDATE channel SET sort_order = ?1 WHERE user_key = ?2 AND slug = ?3", params![i as i64, user_key, s])
+					.map_err(|e| e.to_string())?;
 			}
 			tx.commit().map_err(|e| e.to_string())
 		})
@@ -643,7 +656,8 @@ impl SqliteStore {
 		let slug = slug.to_string();
 		spawn_blocking(move || {
 			let conn = pool.get().map_err(|e| e.to_string())?;
-			conn.execute("DELETE FROM channel WHERE user_key = ?1 AND slug = ?2", params![user_key, slug])
+			conn
+				.execute("DELETE FROM channel WHERE user_key = ?1 AND slug = ?2", params![user_key, slug])
 				.map_err(|e| e.to_string())?;
 			Ok(())
 		})
@@ -665,7 +679,9 @@ impl SqliteStore {
 				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1", params![user_key], |r| r.get(0))
 				.unwrap_or(0);
 			let total_saved: i64 = conn
-				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND saved_at IS NOT NULL", params![user_key], |r| r.get(0))
+				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND saved_at IS NOT NULL", params![user_key], |r| {
+					r.get(0)
+				})
 				.unwrap_or(0);
 			let total_mutes: i64 = conn
 				.query_row("SELECT COUNT(*) FROM mute_rule WHERE user_key = ?1", params![user_key], |r| r.get(0))
@@ -693,15 +709,37 @@ impl SqliteStore {
 			let week_ago = ts_now - 604_800;
 			let month_ago = ts_now - 2_592_000;
 			let today_read: i64 = conn
-				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, day_ago], |r| r.get(0))
+				.query_row(
+					"SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2",
+					params![user_key, day_ago],
+					|r| r.get(0),
+				)
 				.unwrap_or(0);
 			let week_read: i64 = conn
-				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, week_ago], |r| r.get(0))
+				.query_row(
+					"SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2",
+					params![user_key, week_ago],
+					|r| r.get(0),
+				)
 				.unwrap_or(0);
 			let month_read: i64 = conn
-				.query_row("SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2", params![user_key, month_ago], |r| r.get(0))
+				.query_row(
+					"SELECT COUNT(*) FROM post_state WHERE user_key = ?1 AND is_read = 1 AND last_seen_at >= ?2",
+					params![user_key, month_ago],
+					|r| r.get(0),
+				)
 				.unwrap_or(0);
-			Ok(ReadingStats { total_seen, total_read, total_saved, total_mutes, total_channels, top_communities, today_read, week_read, month_read })
+			Ok(ReadingStats {
+				total_seen,
+				total_read,
+				total_saved,
+				total_mutes,
+				total_channels,
+				top_communities,
+				today_read,
+				week_read,
+				month_read,
+			})
 		})
 		.await
 		.map_err(|e| e.to_string())?
@@ -730,9 +768,7 @@ impl SqliteStore {
 }
 
 fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
-	let user_version: i64 = conn
-		.query_row("PRAGMA user_version", [], |row| row.get(0))
-		.map_err(|e| e.to_string())?;
+	let user_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0)).map_err(|e| e.to_string())?;
 
 	if user_version >= 5 {
 		return Ok(());
@@ -831,28 +867,30 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 
 	// V4: sort_order column for channel reordering
 	if user_version < 4 {
-		conn.execute_batch(
-			r#"
+		conn
+			.execute_batch(
+				r#"
 			BEGIN;
 			ALTER TABLE channel ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
 			PRAGMA user_version = 4;
 			COMMIT;
 			"#,
-		)
-		.map_err(|e| e.to_string())?;
+			)
+			.map_err(|e| e.to_string())?;
 	}
 
 	// V5: is_archived column for post_state (hide-from-feed without marking read)
 	if user_version < 5 {
-		conn.execute_batch(
-			r#"
+		conn
+			.execute_batch(
+				r#"
 			BEGIN;
 			ALTER TABLE post_state ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
 			PRAGMA user_version = 5;
 			COMMIT;
 			"#,
-		)
-		.map_err(|e| e.to_string())?;
+			)
+			.map_err(|e| e.to_string())?;
 	}
 
 	Ok(())
@@ -861,16 +899,15 @@ fn migrate(conn: &rusqlite::Connection) -> Result<(), String> {
 fn prune_old_state(conn: &rusqlite::Connection) -> Result<(), String> {
 	// Keep 90 days of post_state; never delete saved posts
 	let cutoff = now_ts() - (90 * 24 * 3600);
-	conn.execute(
-		"DELETE FROM post_state WHERE last_seen_at < ?1 AND saved_at IS NULL",
-		params![cutoff],
-	)
-	.map_err(|e| e.to_string())?;
+	conn
+		.execute("DELETE FROM post_state WHERE last_seen_at < ?1 AND saved_at IS NULL", params![cutoff])
+		.map_err(|e| e.to_string())?;
 	// Prune post_cache entries older than 90 days with no associated post_state
-	conn.execute(
-		"DELETE FROM post_cache WHERE cached_at < ?1 AND post_id NOT IN (SELECT post_id FROM post_state)",
-		params![cutoff],
-	)
-	.map_err(|e| e.to_string())?;
+	conn
+		.execute(
+			"DELETE FROM post_cache WHERE cached_at < ?1 AND post_id NOT IN (SELECT post_id FROM post_state)",
+			params![cutoff],
+		)
+		.map_err(|e| e.to_string())?;
 	Ok(())
 }

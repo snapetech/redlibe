@@ -101,11 +101,7 @@ pub async fn post_comments(req: Request<Body>) -> Result<Response<Body>, String>
 	let sub = req.param("sub").unwrap_or_default();
 	let id = req.param("id").unwrap_or_default();
 	let query = req.uri().query().unwrap_or("");
-	let qs = if query.is_empty() {
-		"?raw_json=1".to_string()
-	} else {
-		format!("?{query}&raw_json=1")
-	};
+	let qs = if query.is_empty() { "?raw_json=1".to_string() } else { format!("?{query}&raw_json=1") };
 	let path = format!("/r/{sub}/comments/{id}.json{qs}");
 
 	let (data, session_updated) = match auth.bearer_token() {
@@ -165,9 +161,7 @@ pub async fn api_vote(req: Request<Body>) -> Result<Response<Body>, String> {
 		let dir = json_body["dir"].as_i64().unwrap_or(0) as i8;
 		(thing_id, dir)
 	} else {
-		let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-			.map(|(k, v)| (k.into_owned(), v.into_owned()))
-			.collect();
+		let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 		let thing_id = form.get("thing_id").cloned().unwrap_or_default();
 		let dir = form.get("dir").and_then(|s| s.parse::<i8>().ok()).unwrap_or(0);
 		(thing_id, dir)

@@ -42,7 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn spawn_server(cfg_dir: &Path, session_secret: &str, port: u16) -> Result<Child, Box<dyn std::error::Error>> {
 	let server_bin = find_server_binary();
 	let mut cmd = Command::new(server_bin);
-	cmd.arg("--address")
+	cmd
+		.arg("--address")
 		.arg("127.0.0.1")
 		.arg("--port")
 		.arg(port.to_string())
@@ -81,9 +82,7 @@ fn server_exe_name() -> &'static str {
 }
 
 fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
-	let addr: SocketAddr = format!("127.0.0.1:{port}")
-		.parse()
-		.map_err(|e| format!("Invalid local socket address: {e}"))?;
+	let addr: SocketAddr = format!("127.0.0.1:{port}").parse().map_err(|e| format!("Invalid local socket address: {e}"))?;
 	let deadline = Instant::now() + timeout;
 	while Instant::now() < deadline {
 		if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {

@@ -73,6 +73,16 @@ pub struct Oauth {
 impl Oauth {
 	/// Create a new OAuth client
 	pub(crate) async fn new() -> Self {
+		if std::env::var("REDLIB_SKIP_ANONYMOUS_OAUTH").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+			warn!("[⚠️] Skipping anonymous OAuth client creation; account/session auth remains available");
+			let backend = OauthBackendImpl::GenericWeb(GenericWebAuth::new());
+			return Self {
+				headers_map: backend.get_headers(),
+				expires_in: u64::MAX,
+				backend,
+			};
+		}
+
 		// Prefer GenericWebAuth first; MobileSpoof has been more brittle when Reddit
 		// changes Android client validation. Fall back to MobileSpoof if needed.
 		let mut failure_count = 0;

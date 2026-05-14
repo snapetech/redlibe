@@ -795,9 +795,7 @@ pub async fn login_ssh_import(req: Request<Body>) -> Result<Response<Body>, Stri
 			};
 			render_login_error(&prefs, &msg)
 		}
-		Ok((bearer_token, user_agent)) => {
-			complete_browser_import_login(bearer_token, Some(user_agent)).await
-		}
+		Ok((bearer_token, user_agent)) => complete_browser_import_login(bearer_token, Some(user_agent)).await,
 	}
 }
 
@@ -838,10 +836,7 @@ fn render_login_error(prefs: &Preferences, msg: &str) -> Result<Response<Body>, 
 /// the browser choice. "auto" searches all known Firefox-based profile dirs.
 fn browser_script_parts(browser: &str) -> (&'static str, &'static str) {
 	match browser {
-		"firefox" => (
-			"~/.mozilla/firefox ~/.var/app/org.mozilla.firefox/.mozilla/firefox",
-			"firefox",
-		),
+		"firefox" => ("~/.mozilla/firefox ~/.var/app/org.mozilla.firefox/.mozilla/firefox", "firefox"),
 		"librewolf" => (
 			// LibreWolf may be at ~/.librewolf (traditional) or ~/.config/librewolf/librewolf (XDG/packaged)
 			"~/.librewolf ~/.config/librewolf/librewolf ~/.var/app/io.gitlab.librewolf-community/.librewolf",
@@ -1426,12 +1421,7 @@ pub async fn sync_subscriptions(req: Request<Body>) -> Result<Response<Body>, St
 
 	let subs = client::fetch_subscribed_subreddits(&auth).await.unwrap_or_default();
 
-	let back = req
-		.headers()
-		.get("Referer")
-		.and_then(|v| v.to_str().ok())
-		.unwrap_or("/")
-		.to_string();
+	let back = req.headers().get("Referer").and_then(|v| v.to_str().ok()).unwrap_or("/").to_string();
 
 	let mut response = crate::utils::redirect(&back);
 

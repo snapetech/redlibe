@@ -29,8 +29,8 @@ pub struct Preset {
 	pub slug: &'static str,
 	pub title: &'static str,
 	pub lens: Lens,
-	pub upstream_sort: &'static str,            // "new"|"hot"|"top"|...
-	pub upstream_t: Option<&'static str>,        // only for top/controversial
+	pub upstream_sort: &'static str,      // "new"|"hot"|"top"|...
+	pub upstream_t: Option<&'static str>, // only for top/controversial
 	pub score: fn(&ScoreCtx) -> ScoreResult,
 	pub gate: fn(&ScoreCtx) -> bool,
 }

@@ -49,18 +49,19 @@ pub fn discover_profiles_in_base(browser: &str, base: &Path) -> Vec<LocalProfile
 		}
 		let id = format!("{browser}:{name}");
 		let label = format!("{} ({name})", display_browser(browser));
-		out.push(LocalProfile { browser: browser.to_string(), id, label, path });
+		out.push(LocalProfile {
+			browser: browser.to_string(),
+			id,
+			label,
+			path,
+		});
 	}
 	out
 }
 
 pub fn import_token(browser: &str, profile_id: Option<&str>, profile_path: Option<&str>) -> Result<ImportedBrowserSession, String> {
 	let profile = resolve_profile(browser, profile_id, profile_path)?;
-	log::info!(
-		"Chromium local import: browser={} profile={}",
-		browser,
-		profile.display()
-	);
+	log::info!("Chromium local import: browser={} profile={}", browser, profile.display());
 	let db_path = profile.join("Cookies");
 	if !db_path.is_file() {
 		return Err(format!("Cookies DB not found in {}", profile.display()));
@@ -74,10 +75,7 @@ pub fn import_token(browser: &str, profile_id: Option<&str>, profile_path: Optio
 		log::info!("Chromium local import: using plaintext cookie value");
 		row.value
 	} else if !row.encrypted_value.is_empty() {
-		log::info!(
-			"Chromium local import: encrypted cookie detected ({} bytes), attempting decrypt",
-			row.encrypted_value.len()
-		);
+		log::info!("Chromium local import: encrypted cookie detected ({} bytes), attempting decrypt", row.encrypted_value.len());
 		decrypt_chromium_cookie(browser, &profile, &row)?
 	} else {
 		return Err("No reddit token_v2 cookie found in selected Chromium profile".to_string());
@@ -121,14 +119,15 @@ fn read_chromium_cookie(conn: &Connection) -> Result<ChromiumCookieRow, String> 
 		)
 		.map_err(|e| format!("Failed to prepare Chromium cookie query: {e}"))?;
 
-	stmt.query_row([], |row| {
-		Ok(ChromiumCookieRow {
-			value: row.get(0)?,
-			encrypted_value: row.get(1)?,
-			host_key: row.get(2)?,
+	stmt
+		.query_row([], |row| {
+			Ok(ChromiumCookieRow {
+				value: row.get(0)?,
+				encrypted_value: row.get(1)?,
+				host_key: row.get(2)?,
+			})
 		})
-	})
-	.map_err(|_| "No reddit token_v2 cookie found in selected Chromium profile".to_string())
+		.map_err(|_| "No reddit token_v2 cookie found in selected Chromium profile".to_string())
 }
 
 fn decrypt_chromium_cookie(browser: &str, profile_dir: &Path, row: &ChromiumCookieRow) -> Result<String, String> {
@@ -243,10 +242,7 @@ fn try_get_modern_master_key(browser: &str, profile_dir: &Path) -> Result<Option
 	};
 	let local_state = user_data_dir.join("Local State");
 	if !local_state.is_file() {
-		log::info!(
-			"Chromium local import: Local State not found at {}",
-			local_state.display()
-		);
+		log::info!("Chromium local import: Local State not found at {}", local_state.display());
 		return Ok(None);
 	}
 	let contents = fs::read_to_string(&local_state).map_err(|e| format!("Failed to read Local State: {e}"))?;
@@ -306,16 +302,11 @@ fn decrypt_local_state_key_windows(raw: &[u8]) -> Result<Vec<u8>, String> {
 		.output()
 		.map_err(|e| format!("Failed to invoke PowerShell for DPAPI decrypt: {e}"))?;
 	if !output.status.success() {
-		return Err(format!(
-			"PowerShell DPAPI decrypt failed: {}",
-			String::from_utf8_lossy(&output.stderr).trim()
-		));
+		return Err(format!("PowerShell DPAPI decrypt failed: {}", String::from_utf8_lossy(&output.stderr).trim()));
 	}
 	let out = String::from_utf8_lossy(&output.stdout);
 	let trimmed = out.trim();
-	general_purpose::STANDARD
-		.decode(trimmed)
-		.map_err(|e| format!("Failed to decode DPAPI output: {e}"))
+	general_purpose::STANDARD.decode(trimmed).map_err(|e| format!("Failed to decode DPAPI output: {e}"))
 }
 
 fn try_get_legacy_password(browser: &str) -> Option<String> {
@@ -323,10 +314,7 @@ fn try_get_legacy_password(browser: &str) -> Option<String> {
 	{
 		for service in mac_safe_storage_service_candidates(browser) {
 			log::info!("Chromium local import: trying macOS Keychain lookup for {}", service);
-			let output = Command::new("security")
-				.args(["find-generic-password", "-w", "-s", service])
-				.output()
-				.ok()?;
+			let output = Command::new("security").args(["find-generic-password", "-w", "-s", service]).output().ok()?;
 			if output.status.success() {
 				let pwd = String::from_utf8_lossy(&output.stdout).trim().to_string();
 				if !pwd.is_empty() {
@@ -380,10 +368,7 @@ fn decrypt_local_state_key_with_safe_storage_password(browser: &str, raw: &[u8],
 		);
 		return Ok(tail.to_vec());
 	}
-	Err(format!(
-		"Local State unwrap produced {} bytes, expected at least 32",
-		decrypted.len()
-	))
+	Err(format!("Local State unwrap produced {} bytes, expected at least 32", decrypted.len()))
 }
 
 fn legacy_pbkdf2_iterations() -> u32 {

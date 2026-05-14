@@ -35,7 +35,12 @@ pub fn discover_profiles_in_base(browser: &str, base: &Path) -> Vec<LocalProfile
 		let profile_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("profile");
 		let id = format!("{browser}:{profile_name}");
 		let label = format!("{} ({profile_name})", display_browser(browser));
-		out.push(LocalProfile { browser: browser.to_string(), id, label, path });
+		out.push(LocalProfile {
+			browser: browser.to_string(),
+			id,
+			label,
+			path,
+		});
 	}
 
 	out
@@ -83,7 +88,8 @@ fn read_firefox_token(conn: &Connection) -> Result<String, String> {
 		)
 		.map_err(|e| format!("Failed to prepare cookie query: {e}"))?;
 
-	stmt.query_row([], |row| row.get::<_, String>(0))
+	stmt
+		.query_row([], |row| row.get::<_, String>(0))
 		.map_err(|_| "No reddit token_v2 cookie found in selected Firefox profile".to_string())
 }
 
@@ -111,9 +117,7 @@ fn resolve_profile(browser: &str, profile_id: Option<&str>, profile_path: Option
 fn read_firefox_user_agent(browser: &str) -> Option<String> {
 	let version = detect_browser_version(browser)?;
 	let major = version.split('.').next().unwrap_or(&version);
-	Some(format!(
-		"Mozilla/5.0 (X11; Linux x86_64; rv:{version}) Gecko/20100101 Firefox/{major}.0"
-	))
+	Some(format!("Mozilla/5.0 (X11; Linux x86_64; rv:{version}) Gecko/20100101 Firefox/{major}.0"))
 }
 
 fn detect_browser_version(browser: &str) -> Option<String> {
@@ -147,8 +151,15 @@ fn firefox_base_dirs(browser: &str) -> Vec<PathBuf> {
 		if let Some(appdata) = env::var_os("APPDATA") {
 			let mut p = PathBuf::from(appdata);
 			match browser {
-				"librewolf" => { p.push("LibreWolf"); p.push("Profiles"); }
-				_ => { p.push("Mozilla"); p.push("Firefox"); p.push("Profiles"); }
+				"librewolf" => {
+					p.push("LibreWolf");
+					p.push("Profiles");
+				}
+				_ => {
+					p.push("Mozilla");
+					p.push("Firefox");
+					p.push("Profiles");
+				}
 			}
 			out.push(p);
 		}
@@ -161,8 +172,14 @@ fn firefox_base_dirs(browser: &str) -> Vec<PathBuf> {
 			p.push("Library");
 			p.push("Application Support");
 			match browser {
-				"librewolf" => { p.push("LibreWolf"); p.push("Profiles"); }
-				_ => { p.push("Firefox"); p.push("Profiles"); }
+				"librewolf" => {
+					p.push("LibreWolf");
+					p.push("Profiles");
+				}
+				_ => {
+					p.push("Firefox");
+					p.push("Profiles");
+				}
 			}
 			out.push(p);
 		}

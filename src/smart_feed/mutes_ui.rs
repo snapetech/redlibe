@@ -37,10 +37,17 @@ pub async fn mutes_list(req: Request<Body>) -> Result<Response<Body>, String> {
 		return info(req, "Enable local state (REDLIB_ENABLE_LOCAL_STATE=on) to manage mutes.").await;
 	}
 
-	let body = MutesTemplate { prefs, mutes, csrf: csrf_tok, url };
+	let body = MutesTemplate {
+		prefs,
+		mutes,
+		csrf: csrf_tok,
+		url,
+	};
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }
 
@@ -57,18 +64,13 @@ pub async fn action_unmute(mut req: Request<Body>) -> Result<Response<Body>, Str
 	let form = read_form(&mut req).await?;
 	csrf::verify_csrf(&req, form.get("csrf").map(|s| s.as_str()).unwrap_or_default())?;
 
-	let mute_id: i64 = form
-		.get("mute_id")
-		.and_then(|s| s.parse().ok())
-		.ok_or_else(|| "Missing or invalid mute_id".to_string())?;
+	let mute_id: i64 = form.get("mute_id").and_then(|s| s.parse().ok()).ok_or_else(|| "Missing or invalid mute_id".to_string())?;
 
 	if let State::Sqlite(store) = &*STATE {
 		store.delete_mute(&user_key, mute_id).await?;
 	}
 
-	Ok(crate::utils::redirect(
-		form.get("back").map(|s| s.as_str()).unwrap_or("/mutes"),
-	))
+	Ok(crate::utils::redirect(form.get("back").map(|s| s.as_str()).unwrap_or("/mutes")))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,18 +96,14 @@ pub async fn action_export_mutes(req: Request<Body>) -> Result<Response<Body>, S
 		Vec::new()
 	};
 
-	let entries: Vec<MuteExportEntry> = pairs
-		.into_iter()
-		.map(|(rule_type, pattern)| MuteExportEntry { rule_type, pattern })
-		.collect();
+	let entries: Vec<MuteExportEntry> = pairs.into_iter().map(|(rule_type, pattern)| MuteExportEntry { rule_type, pattern }).collect();
 
 	let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
 	let mut out = Response::new(Body::from(json));
 	out.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("application/json"));
-	out.headers_mut().insert(
-		"content-disposition",
-		hyper::header::HeaderValue::from_static("attachment; filename=\"mutes.json\""),
-	);
+	out
+		.headers_mut()
+		.insert("content-disposition", hyper::header::HeaderValue::from_static("attachment; filename=\"mutes.json\""));
 	Ok(out)
 }
 

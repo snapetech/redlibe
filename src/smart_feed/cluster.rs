@@ -11,17 +11,12 @@ pub fn title_norm(s: &str) -> String {
 			out.push(' ');
 		}
 	}
-	out
-		.split_whitespace()
-		.filter(|w| !STOPWORDS.contains(w))
-		.collect::<Vec<_>>()
-		.join(" ")
+	out.split_whitespace().filter(|w| !STOPWORDS.contains(w)).collect::<Vec<_>>().join(" ")
 }
 
 // Very small stopword list; extend as desired.
 const STOPWORDS: &[&str] = &[
-	"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with", "is", "are", "was", "were", "this", "that", "it", "as", "by",
-	"from", "at", "be", "have", "has", "had",
+	"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with", "is", "are", "was", "were", "this", "that", "it", "as", "by", "from", "at", "be", "have", "has", "had",
 ];
 
 pub fn simhash64(text: &str) -> u64 {

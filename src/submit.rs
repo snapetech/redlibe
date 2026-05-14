@@ -60,9 +60,7 @@ pub async fn post(req: Request<Body>) -> Result<Response<Body>, String> {
 	if body_bytes.len() > MAX_BODY_SIZE {
 		return Err("Request body too large.".to_string());
 	}
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	let submitted_csrf = form.get("csrf_token").map(|s| s.as_str()).unwrap_or("");
 	validate_csrf_token(&auth, submitted_csrf)?;
@@ -100,15 +98,9 @@ pub async fn post(req: Request<Body>) -> Result<Response<Body>, String> {
 		percent_encoding::utf8_percent_encode(title, percent_encoding::NON_ALPHANUMERIC),
 	);
 	if kind == "link" {
-		body_str.push_str(&format!(
-			"&url={}",
-			percent_encoding::utf8_percent_encode(url_link, percent_encoding::NON_ALPHANUMERIC)
-		));
+		body_str.push_str(&format!("&url={}", percent_encoding::utf8_percent_encode(url_link, percent_encoding::NON_ALPHANUMERIC)));
 	} else {
-		body_str.push_str(&format!(
-			"&text={}",
-			percent_encoding::utf8_percent_encode(text, percent_encoding::NON_ALPHANUMERIC)
-		));
+		body_str.push_str(&format!("&text={}", percent_encoding::utf8_percent_encode(text, percent_encoding::NON_ALPHANUMERIC)));
 	}
 
 	let (value, session_updated) = authed_post("/api/submit".to_string(), body_str, &auth).await?;
@@ -127,15 +119,8 @@ pub async fn post(req: Request<Body>) -> Result<Response<Body>, String> {
 			return Err(format!("Reddit: {msg}"));
 		}
 	}
-	let return_to = form
-		.get("return_to")
-		.map(|s| s.as_str())
-		.unwrap_or("/");
-	let return_to = if return_to.starts_with('/') && !return_to.starts_with("//") {
-		return_to
-	} else {
-		"/"
-	};
+	let return_to = form.get("return_to").map(|s| s.as_str()).unwrap_or("/");
+	let return_to = if return_to.starts_with('/') && !return_to.starts_with("//") { return_to } else { "/" };
 	let redirect_url: String = if let Some(data) = json.and_then(|j| j.get("data")).and_then(|d| d.get("url")).and_then(|u| u.as_str()) {
 		if data.starts_with("http") {
 			return_to.to_string()

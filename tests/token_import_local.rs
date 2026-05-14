@@ -57,22 +57,23 @@ fn chromium_import_returns_clear_error_for_undecryptable_cookie() {
 	create_chromium_cookie_db(&profile.join("Cookies"), "", b"v10notreallyencrypted");
 
 	let err = token_import::import_local("chrome", None, Some(profile.to_str().unwrap())).unwrap_err();
-	assert!(
-		err.contains("encrypted") || err.contains("decrypted"),
-		"unexpected error: {err}"
-	);
+	assert!(err.contains("encrypted") || err.contains("decrypted"), "unexpected error: {err}");
 }
 
 #[test]
 fn chromium_profile_selection_rejects_missing_profile_id() {
 	let err = token_import::import_local("chrome", Some("chrome:missing"), None).unwrap_err();
-	assert!(err.contains("Selected profile was not found") || err.contains("No Chrome profiles"), "unexpected error: {err}");
+	assert!(
+		err.contains("Selected profile was not found") || err.contains("No Chrome profiles"),
+		"unexpected error: {err}"
+	);
 }
 
 fn create_firefox_cookie_db(path: &Path, token: &str) {
 	let conn = Connection::open(path).unwrap();
-	conn.execute_batch(
-		"CREATE TABLE moz_cookies (
+	conn
+		.execute_batch(
+			"CREATE TABLE moz_cookies (
 			id INTEGER PRIMARY KEY,
 			originAttributes TEXT,
 			name TEXT,
@@ -89,20 +90,22 @@ fn create_firefox_cookie_db(path: &Path, token: &str) {
 			rawSameSite INTEGER DEFAULT 0,
 			schemeMap INTEGER DEFAULT 0
 		);",
-	)
-	.unwrap();
-	conn.execute(
-		"INSERT INTO moz_cookies (name, value, host, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly)
+		)
+		.unwrap();
+	conn
+		.execute(
+			"INSERT INTO moz_cookies (name, value, host, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly)
 		 VALUES (?1, ?2, '.reddit.com', '/', 9999999999, 2, 1, 1, 1)",
-		("token_v2", token),
-	)
-	.unwrap();
+			("token_v2", token),
+		)
+		.unwrap();
 }
 
 fn create_firefox_cookie_db_without_token(path: &Path) {
 	let conn = Connection::open(path).unwrap();
-	conn.execute_batch(
-		"CREATE TABLE moz_cookies (
+	conn
+		.execute_batch(
+			"CREATE TABLE moz_cookies (
 			id INTEGER PRIMARY KEY,
 			originAttributes TEXT,
 			name TEXT,
@@ -115,20 +118,22 @@ fn create_firefox_cookie_db_without_token(path: &Path) {
 			isSecure INTEGER,
 			isHttpOnly INTEGER
 		);",
-	)
-	.unwrap();
-	conn.execute(
-		"INSERT INTO moz_cookies (name, value, host, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly)
+		)
+		.unwrap();
+	conn
+		.execute(
+			"INSERT INTO moz_cookies (name, value, host, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly)
 		 VALUES ('other', 'x', '.reddit.com', '/', 9999999999, 2, 1, 1, 1)",
-		[],
-	)
-	.unwrap();
+			[],
+		)
+		.unwrap();
 }
 
 fn create_chromium_cookie_db(path: &Path, value: &str, encrypted_value: &[u8]) {
 	let conn = Connection::open(path).unwrap();
-	conn.execute_batch(
-		"CREATE TABLE cookies (
+	conn
+		.execute_batch(
+			"CREATE TABLE cookies (
 			creation_utc INTEGER NOT NULL DEFAULT 0,
 			host_key TEXT NOT NULL,
 			top_frame_site_key TEXT NOT NULL DEFAULT '',
@@ -149,14 +154,15 @@ fn create_chromium_cookie_db(path: &Path, value: &str, encrypted_value: &[u8]) {
 			last_update_utc INTEGER NOT NULL DEFAULT 0,
 			source_type INTEGER NOT NULL DEFAULT 0
 		);",
-	)
-	.unwrap();
-	conn.execute(
-		"INSERT INTO cookies (host_key, name, value, encrypted_value, last_access_utc)
+		)
+		.unwrap();
+	conn
+		.execute(
+			"INSERT INTO cookies (host_key, name, value, encrypted_value, last_access_utc)
 		 VALUES (?1, ?2, ?3, ?4, ?5)",
-		(".reddit.com", "token_v2", value, encrypted_value, 10_i64),
-	)
-	.unwrap();
+			(".reddit.com", "token_v2", value, encrypted_value, 10_i64),
+		)
+		.unwrap();
 }
 
 fn test_dir(prefix: &str) -> PathBuf {

@@ -54,10 +54,7 @@ fn title_to_slug(title: &str) -> String {
 }
 
 fn valid_slug(s: &str) -> bool {
-	!s.is_empty()
-		&& s.len() <= 50
-		&& s != "my-subs"
-		&& s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+	!s.is_empty() && s.len() <= 50 && s != "my-subs" && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 fn parse_subreddits(input: &str) -> Vec<String> {
@@ -101,7 +98,11 @@ fn parse_channel_form(form: &HashMap<String, String>) -> Result<(String, String,
 	let min_comments = form.get("gate_min_comments").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0).max(0);
 	let min_score = form.get("gate_min_score").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 	let max_age_hours = form.get("gate_max_age_hours").and_then(|s| s.parse::<i64>().ok()).unwrap_or(72).max(0);
-	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") { "off" } else { "on" };
+	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") {
+		"off"
+	} else {
+		"on"
+	};
 	let density = form.get("presentation_density").map(|s| s.as_str()).unwrap_or("balanced").to_string();
 
 	let include_keywords = parse_multiline(form.get("filters_include_keywords").map(|s| s.as_str()).unwrap_or(""));
@@ -115,7 +116,8 @@ fn parse_channel_form(form: &HashMap<String, String>) -> Result<(String, String,
 		"show" => "show",
 		"blur" => "blur",
 		_ => "hide",
-	}.to_string();
+	}
+	.to_string();
 
 	let rule = ChannelRule {
 		sources: Sources { subscriptions, subreddits },
@@ -127,8 +129,15 @@ fn parse_channel_form(form: &HashMap<String, String>) -> Result<(String, String,
 			media_types,
 			nsfw,
 		},
-		gates: Gates { min_comments, min_score, max_age_hours },
-		presentation: Presentation { clusters: clusters.to_string(), density },
+		gates: Gates {
+			min_comments,
+			min_score,
+			max_age_hours,
+		},
+		presentation: Presentation {
+			clusters: clusters.to_string(),
+			density,
+		},
 	};
 
 	Ok((title, slug, rule))
@@ -156,10 +165,18 @@ pub async fn channels_list(req: Request<Body>) -> Result<Response<Body>, String>
 	};
 
 	let csrf_tok = csrf::ensure_csrf_cookie(&req, &mut res);
-	let body = ChannelsTemplate { prefs, channels, error: String::new(), url, csrf: csrf_tok };
+	let body = ChannelsTemplate {
+		prefs,
+		channels,
+		error: String::new(),
+		url,
+		csrf: csrf_tok,
+	};
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }
 
@@ -195,10 +212,18 @@ pub async fn channels_create(mut req: Request<Body>) -> Result<Response<Body>, S
 				Vec::new()
 			};
 			let csrf_tok = csrf::ensure_csrf_cookie(&req, &mut res);
-			let body = ChannelsTemplate { prefs, channels, error: msg, url, csrf: csrf_tok };
+			let body = ChannelsTemplate {
+				prefs,
+				channels,
+				error: msg,
+				url,
+				csrf: csrf_tok,
+			};
 			*res.body_mut() = Body::from(body.render().unwrap_or_default());
 			*res.status_mut() = hyper::StatusCode::OK;
-			res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+			res
+				.headers_mut()
+				.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 			Ok(res)
 		}
 	}
@@ -231,10 +256,20 @@ pub async fn channels_edit(req: Request<Body>) -> Result<Response<Body>, String>
 	};
 
 	let csrf_tok = csrf::ensure_csrf_cookie(&req, &mut res);
-	let body = ChannelEditTemplate { prefs, slug, title, rule, error: String::new(), url, csrf: csrf_tok };
+	let body = ChannelEditTemplate {
+		prefs,
+		slug,
+		title,
+		rule,
+		error: String::new(),
+		url,
+		csrf: csrf_tok,
+	};
 	*res.body_mut() = Body::from(body.render().unwrap_or_default());
 	*res.status_mut() = hyper::StatusCode::OK;
-	res.headers_mut().insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+	res
+		.headers_mut()
+		.insert("content-type", hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
 	Ok(res)
 }
 
@@ -264,7 +299,11 @@ pub async fn channels_update(mut req: Request<Body>) -> Result<Response<Body>, S
 	let min_comments = form.get("gate_min_comments").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0).max(0);
 	let min_score = form.get("gate_min_score").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 	let max_age_hours = form.get("gate_max_age_hours").and_then(|s| s.parse::<i64>().ok()).unwrap_or(72).max(0);
-	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") { "off" } else { "on" };
+	let clusters = if form.get("presentation_clusters").map(|s| s.as_str()) == Some("off") {
+		"off"
+	} else {
+		"on"
+	};
 	let density = form.get("presentation_density").map(|s| s.as_str()).unwrap_or("balanced").to_string();
 
 	let include_keywords = parse_multiline(form.get("filters_include_keywords").map(|s| s.as_str()).unwrap_or(""));
@@ -277,7 +316,8 @@ pub async fn channels_update(mut req: Request<Body>) -> Result<Response<Body>, S
 		"show" => "show",
 		"blur" => "blur",
 		_ => "hide",
-	}.to_string();
+	}
+	.to_string();
 
 	let rule = ChannelRule {
 		sources: Sources { subscriptions, subreddits },
@@ -289,8 +329,15 @@ pub async fn channels_update(mut req: Request<Body>) -> Result<Response<Body>, S
 			media_types,
 			nsfw,
 		},
-		gates: Gates { min_comments, min_score, max_age_hours },
-		presentation: Presentation { clusters: clusters.to_string(), density },
+		gates: Gates {
+			min_comments,
+			min_score,
+			max_age_hours,
+		},
+		presentation: Presentation {
+			clusters: clusters.to_string(),
+			density,
+		},
 	};
 
 	if let State::Sqlite(store) = &*STATE {

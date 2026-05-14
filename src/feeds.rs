@@ -36,8 +36,7 @@ fn valid_feed_name(s: &str) -> bool {
 	if s.is_empty() || s.len() > 50 {
 		return false;
 	}
-	s.chars()
-		.all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_')
+	s.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_')
 }
 
 /// Normalize subreddit name for URL: strip, lowercase, only valid chars.
@@ -46,9 +45,7 @@ fn normalize_sub(s: &str) -> Option<String> {
 	if s.is_empty() || s.len() > 21 {
 		return None;
 	}
-	if s.chars()
-		.all(|c| c.is_ascii_alphanumeric() || c == '_')
-	{
+	if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
 		Some(s)
 	} else {
 		None
@@ -57,10 +54,7 @@ fn normalize_sub(s: &str) -> Option<String> {
 
 /// Parse "sub1, sub2  sub3" or "sub1+sub2" into a sorted, deduplicated list.
 fn parse_subreddits_list(input: &str) -> Vec<String> {
-	let mut subs: Vec<String> = input
-		.split(|c| c == ',' || c == '+' || c == ' ' || c == '\n')
-		.filter_map(|s| normalize_sub(s))
-		.collect();
+	let mut subs: Vec<String> = input.split(|c| c == ',' || c == '+' || c == ' ' || c == '\n').filter_map(|s| normalize_sub(s)).collect();
 	subs.sort();
 	subs.dedup();
 	subs
@@ -82,10 +76,7 @@ struct FeedsTemplate {
 }
 
 fn feed_link(name: &str) -> String {
-	format!(
-		"/feed/{}",
-		percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC)
-	)
+	format!("/feed/{}", percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC))
 }
 
 /// GET /feeds — show manage page.
@@ -112,9 +103,7 @@ pub async fn post(req: Request<Body>) -> Result<Response<Body>, String> {
 	let prefs = Preferences::new(&req);
 	let mut feeds = parse_custom_feeds_cookie(&req);
 	let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| e.to_string())?;
-	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes)
-		.map(|(k, v)| (k.into_owned(), v.into_owned()))
-		.collect();
+	let form: HashMap<String, String> = url::form_urlencoded::parse(&body_bytes).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
 
 	let action = form.get("action").map(|s| s.as_str()).unwrap_or("save");
 
@@ -181,10 +170,7 @@ pub async fn post(req: Request<Body>) -> Result<Response<Body>, String> {
 /// GET /feed/:name — redirect to /r/sub1+sub2+...
 pub async fn redirect_to_feed(req: Request<Body>) -> Result<Response<Body>, String> {
 	let name_encoded = req.param("name").unwrap_or_default();
-	let name = percent_encoding::percent_decode_str(name_encoded.as_str())
-		.decode_utf8()
-		.unwrap_or_default()
-		.to_string();
+	let name = percent_encoding::percent_decode_str(name_encoded.as_str()).decode_utf8().unwrap_or_default().to_string();
 	let feeds = parse_custom_feeds_cookie(&req);
 	let feed = feeds.iter().find(|f| f.name.eq_ignore_ascii_case(&name));
 	match feed {

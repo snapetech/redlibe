@@ -18,10 +18,7 @@ pub async fn get_go(req: Request<Body>) -> Result<Response<Body>, String> {
 	let r_param = param(&path, "r").unwrap_or_default();
 	let r = r_param.trim();
 	if !r.is_empty() {
-		let sanitized: String = r
-			.chars()
-			.map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
-			.collect();
+		let sanitized: String = r.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
 		let sub = sanitized.trim_matches('_');
 		if !sub.is_empty() && sub.len() <= 21 {
 			return Ok(redirect(&format!("/r/{sub}")));

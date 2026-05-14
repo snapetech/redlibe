@@ -1703,15 +1703,32 @@ pub fn plain_text_preview(html: &str, max_len: usize) -> String {
 	let mut in_entity = false;
 	for c in html.chars() {
 		match c {
-			'<' => { in_tag = true; }
-			'>' => { in_tag = false; }
-			'&' if !in_tag => { in_entity = true; out.push(' '); }
-			';' if in_entity => { in_entity = false; }
+			'<' => {
+				in_tag = true;
+			}
+			'>' => {
+				in_tag = false;
+			}
+			'&' if !in_tag => {
+				in_entity = true;
+				out.push(' ');
+			}
+			';' if in_entity => {
+				in_entity = false;
+			}
 			_ if in_tag || in_entity => {}
-			'\n' | '\r' => { if !out.ends_with(' ') { out.push(' '); } }
-			c => { out.push(c); }
+			'\n' | '\r' => {
+				if !out.ends_with(' ') {
+					out.push(' ');
+				}
+			}
+			c => {
+				out.push(c);
+			}
 		}
-		if out.len() >= max_len { break; }
+		if out.len() >= max_len {
+			break;
+		}
 	}
 	let trimmed = out.trim().to_string();
 	if trimmed.is_empty() {
@@ -1752,11 +1769,13 @@ pub async fn error(req: Request<Body>, msg: &str) -> Result<Response<Body>, Stri
 	.render()
 	.unwrap_or_default();
 
-	Ok(Response::builder()
-		.status(if is_upstream_failure { 503 } else { 404 })
-		.header("content-type", "text/html")
-		.body(body.into())
-		.unwrap_or_default())
+	Ok(
+		Response::builder()
+			.status(if is_upstream_failure { 503 } else { 404 })
+			.header("content-type", "text/html")
+			.body(body.into())
+			.unwrap_or_default(),
+	)
 }
 
 /// Renders a generic info landing page.
