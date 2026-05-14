@@ -3,3 +3,6 @@
 opencode.json
 .cursor/
 target/
+
+# Local private denylist/config
+/.local/
