@@ -77,7 +77,7 @@ jobs:
           Compress-Archive -Path tauri-dist/* -DestinationPath "redlib-tauri-scaffold-${{ matrix.artifact_suffix }}.zip" -Force
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: redlib-${{ matrix.artifact_suffix }}
           path: |
@@ -85,7 +85,7 @@ jobs:
             redlib-${{ matrix.artifact_suffix }}.zip
 
       - name: Upload Tauri scaffold artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: redlib-tauri-scaffold-${{ matrix.artifact_suffix }}
           path: |
