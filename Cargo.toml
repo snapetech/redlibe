@@ -73,7 +73,7 @@ r2d2 = "0.8.10"
 r2d2_sqlite = "0.25.0"
 pbkdf2 = "0.12"
 sha1 = "0.10"
-cbc = "0.1"
+cbc = "0.2"
 aes = "0.8"
 
 [dev-dependencies]
